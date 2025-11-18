@@ -19,7 +19,7 @@ from typing import List, Optional
 app = FastAPI(title="Laurier Route Planner")  # name is wip
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://bendang0309.github.io","https://cp317-group-18-project.onrender.com"],  
+    allow_origins=["https://bendang0309.github.io", "https://KeithOruwari19.github.io", "https://cp317-group-18-project.onrender.com"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
