@@ -1,0 +1,59 @@
+########################################
+# Python / FastAPI ignores
+########################################
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+env/
+venv/
+.venv/
+
+########################################
+# OS / System files
+########################################
+
+.DS_Store
+Thumbs.db
+
+########################################
+# VS Code settings
+########################################
+
+.vscode/
+*.code-workspace
+
+########################################
+# Logs & Temp files
+########################################
+
+*.log
+*.tmp
+*.swp
+*.swo
+
+########################################
+# Node / Frontend (future-proof)
+########################################
+
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+########################################
+# Environment / Secrets
+########################################
+
+.env
+*.env
+
+########################################
+# Uploads (OPTIONAL - recommended to keep)
+########################################
+# If you want to ignore uploaded profile pictures locally, uncomment:
+# uploads/*
+# !uploads/.gitkeep
