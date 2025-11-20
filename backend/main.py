@@ -130,7 +130,7 @@ async def get_route(req: RouteReq):
             "error": str(e)
         }
 
-BOOKING_DB = [] # this is just to store temporarily like a database
+# Models start here
 
 class RoomCreateReq(BaseModel):
     name: str = Field(..., min_length=1)
@@ -140,6 +140,7 @@ class RoomCreateReq(BaseModel):
     capacity: int = Field(4, gt=0)
     private: bool = False 
     password: str | None = None # only if password is true
+    mode: str = "walking"
 
 class RoomInfo(BaseModel):
     id: str
@@ -154,6 +155,14 @@ class RoomInfo(BaseModel):
     start_coord: list | None = None
     dest_coord: list | None = None
     created_at: str
+    # navigation related starts here
+    route_distance_m: float | None = None
+    route_duration_s: float | None = None
+    route_polyline: list | None = None
+    route_steps: list | None = None
+    route_source: str | None = None  # 'osrm' or 'haversine_fallback'
+    route_error: str | None = None
+    created_at: str
 
 class JoinReq(BaseModel):
     user_id: str = Field(..., min_length=1)
@@ -161,6 +170,31 @@ class JoinReq(BaseModel):
 
 class LeaveReq(BaseModel):
     user_id: str = Field(..., min_length=1)
+
+# notify room starts here
+
+ROOM_DB: dict = {}
+ROOM_DB_LOCK = asyncio.Lock()
+
+ROOM_WS_CONNECTIONS: dict = {}
+WS_LOCK = asyncio.Lock()
+
+def now_iso() -> str:
+    return datetime.utcnow().isoformat()
+
+async def notify_room(room_id: str, message: dict):
+    async with WS_LOCK:
+        conns = set(ROOM_WS_CONNECTIONS.get(room_id, set()))
+    dead = []
+    for ws in conns:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            dead.append(ws)
+    if dead:
+        async with WS_LOCK:
+            for d in dead:
+                ROOM_WS_CONNECTIONS.get(room_id, set()).discard(d)
 
 @app.get("/service/v1/my_bookings")
 async def get_bookings(user_id: str):
