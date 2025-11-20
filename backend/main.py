@@ -1,13 +1,3 @@
-"""
--------------------------------------------------------
-[program description]
--------------------------------------------------------
-Author:  Ben Dang
-ID:      169071532
-Email:   dang1532@mylaurier.ca
-__updated__ = "2025-10-26"
--------------------------------------------------------
-"""
 # Imports
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
