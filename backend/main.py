@@ -16,7 +16,7 @@ import httpx
 import math  # only for haversine
 from typing import List, Optional
 # Constants
-app = FastAPI(title="Laurier Route Planner")  # name is wip
+app = FastAPI(title="WalkingBuddy Navigation") 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://bendang0309.github.io", "https://KeithOruwari19.github.io", "https://cp317-group-18-project.onrender.com"],  
@@ -30,7 +30,7 @@ USER_AGENT = "CP317-Group-18-project (contact: dang1532@mylaurier.ca)"  # my ema
 class RouteReq(BaseModel):
     start: str
     destination: str
-    mode: str = "walking"  # driving or walking
+    mode: str = "walking" 
 
 # this is going to define the models for booking system on the Walking Buddy
 class BookingRequest(BaseModel):
