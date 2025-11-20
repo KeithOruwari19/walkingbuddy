@@ -1,12 +1,12 @@
 # Imports
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import math  # only for haversine
 from typing import List, Optional
 # Constants
-app = FastAPI(title="WalkingBuddy Navigation") 
+app = FastAPI(title="WalkingBuddy Navigation + Rooms") 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://bendang0309.github.io", "https://KeithOruwari19.github.io", "https://cp317-group-18-project.onrender.com"],  
@@ -16,6 +16,8 @@ app.add_middleware(
 )
 USER_AGENT = "CP317-Group-18-project (contact: dang1532@mylaurier.ca)"  # my email for nominatim
 
+GEOCODE_CACHE: dict = {} # to store queries so that nominatim doesn't get repeat requests of the same content
+GEOCODE_CACHE_LOCK = asyncio.Lock()
 
 class RouteReq(BaseModel):
     start: str
@@ -129,57 +131,36 @@ async def get_route(req: RouteReq):
         }
 
 BOOKING_DB = [] # this is just to store temporarily like a database
-MATCH_DISTANCE_KM = 1.0 # if two users start within 1.0 km of each other then that would be a match
 
-@app.post("/service/v1/walking_buddy")
-# I am not going to be creative with the name lol
-async def book_walk_and_find_buddies(req: BookingRequest):
+class RoomCreateReq(BaseModel):
+    name: str = Field(..., min_length=1)
+    host_user_id: str = Field(..., min_length=1)
+    start_address: str = Field(..., min_length=1)         
+    destination_address: str = Field(..., min_length=1)    
+    capacity: int = Field(4, gt=0)
+    private: bool = False 
+    password: str | None = None # only if password is true
 
-    # Grocoding the user's destination and its better to do it on the backend cuz we got the function for it here
-    # Also its better to send less data from frontend
-    try:
-        dest_coord = await geocode_nominatim(req.destination_address)
-    except Exception as e:
-        # if the address is not an actual address this should fail
-        raise HTTPException(status_code=400, detail=f"Destination geocode failed: {e}")
+class RoomInfo(BaseModel):
+    id: str
+    name: str
+    host_user_id: str
+    capacity: int
+    private: bool
+    participant_count: int
+    participants: list
+    start_address: str
+    destination_address: str
+    start_coord: list | None = None
+    dest_coord: list | None = None
+    created_at: str
 
-    # new booking object for defintions makes it easier for me to call
-    new_booking = {
-        "user_id": req.user_id,
-        "start_coord": req.start_coord,
-        "destination_address": req.destination_address, # Store the address string
-        "dest_coord": dest_coord, # Store the geocoded coordinates
-        "timestamp": req.timestamp
-    }
+class JoinReq(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    password: str | None = None # only checked if private = true
 
-    # This is supposed to find matches by looping through the temporary list as a database
-    matches = []
-    for booking in BOOKING_DB:
-        # can't let the user match with themselves
-        if booking["user_id"] == req.user_id:
-            continue
-
-        # uses the haversine function to find the distance between the user start and the other user start point.
-        dist_km = haversine_km(req.start_coord, booking["start_coord"])
-
-        # If the distance between them is between the 1 km then its a match.
-        if dist_km <= MATCH_DISTANCE_KM:
-            matches.append({
-                "user_id": r["user_id"],
-                "start_coord": r["start_coord"],
-                "distance_km": dist_km
-            })
-    # Saves the new booking to the list
-    BOOKING_DB.append(new_booking)
-
-    #  Sends back both the confirmation of their booking and the list of matches that's found
-    return {
-        "booking": new_booking,
-        "matches": { 
-            "count": len(matches),
-            "matches": matches
-        }
-    }
+class LeaveReq(BaseModel):
+    user_id: str = Field(..., min_length=1)
 
 @app.get("/service/v1/my_bookings")
 async def get_bookings(user_id: str):
