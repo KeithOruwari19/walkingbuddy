@@ -5,17 +5,13 @@ import logging
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Set, Any
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, Response
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import math  # only for haversine
 
-# logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("main")
-
-# Constants
+# fastapi
 app = FastAPI(title="WalkingBuddy Navigation + Rooms") 
 app.add_middleware(
     CORSMiddleware,
@@ -26,18 +22,26 @@ app.add_middleware(
 )
 USER_AGENT = "WalkingBuddy (contact: dang1532@mylaurier.ca)"  # my email for nominatim
 
+SESSION_SECRET = os.getenv("SESSION_SECRET", "placeholder-session-secret") # placeholder so that website doesn't crash
+SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "session")  
+SESSION_COOKIE_SAMESITE = "lax"
+SESSION_COOKIE_SECURE = os.getenv("ENV", "development") == "production"
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, session_cookie=SESSION_COOKIE_NAME)
+
+# storages and locks
 GEOCODE_CACHE: dict = {} # cache to reduce repeated nominatim lookups
 GEOCODE_CACHE_LOCK = asyncio.Lock()
 
-# in-memory room DB (single-instance prototype)
 ROOM_DB: Dict[str, Dict[str, Any]] = {}
 ROOM_DB_LOCK = asyncio.Lock()
 
-# websocket connections for rooms (rooms/chat backend can use these)
 ROOM_WS_CONNECTIONS: Dict[str, Set[WebSocket]] = {}
 WS_LOCK = asyncio.Lock()
 
-# models start here
+HISTORY_LIMIT = 200
+MAX_MESSAGE_LEN = 2000
+
+# models
 class RouteReq(BaseModel):
     start: str
     destination: str
@@ -46,8 +50,8 @@ class RouteReq(BaseModel):
 class RoomCreateReq(BaseModel):
     name: str = Field(..., min_length=1)
     host_user_id: str = Field(..., min_length=1)
-    start_address: str = Field(..., min_length=1)         
-    destination_address: str = Field(..., min_length=1)    
+    start: str = Field(..., min_length=1)         
+    destination: str = Field(..., min_length=1)    
     capacity: int = Field(4, gt=0)
     private: bool = False 
     password: str | None = None # only if password is true
@@ -81,7 +85,26 @@ class JoinReq(BaseModel):
 
 class LeaveReq(BaseModel):
     user_id: str = Field(..., min_length=1)
+    
+# helpers
+def now_iso() -> str:
+    return datetime.utcnow().isoformat()
 
+def sanitize_text(s: str) -> str:
+    return s[:MAX_MESSAGE_LEN]
+
+def get_session_user(request: Request) -> Optional[str]:
+    """
+    Read the session cookie-managed session from request.session and return user_id.
+    SessionMiddleware stores session data (signed) in the cookie. For HTTP routes this works.
+    """
+    # request.session is provided by SessionMiddleware for HTTP requests
+    try:
+        return request.session.get("user_id")
+    except Exception:
+        return None
+
+# routing
 async def geocode_nominatim(address: str):
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": address, "format": "json", "limit": 1}
@@ -137,8 +160,14 @@ def haversine_km(a, b):  # just in case osrm fails
     return 2 * R * math.asin(math.sqrt(hav))
 
 
-@app.post("/service/v1/route")
-async def get_route(req: RouteReq):
+@app.post("/service/v1/walking_buddy")
+async def create_room(req: RoomCreateReq, request: Request, response: Response):
+    session_user = get_session_user(request)
+    if not session_user:
+        raise HTTPException(status_code=401, detail="authentication required (session cookie)")
+    if session_user != req.host_user_id:
+        raise HTTPException(status_code=403, detail="session user does not match host_user_id")
+
     # 1) geocode start and dest
     try:
         start_coord = await geocode_nominatim(req.start)
@@ -180,43 +209,33 @@ async def get_route(req: RouteReq):
             "fallback": True,
             "error": str(e)
         }
+    room_id = str(uuid.uuid4())
+    created_at = now_iso()
+    room_obj = {
+        "id": room_id,
+        "name": req.name,
+        "host_user_id": req.host_user_id,
+        "capacity": req.capacity,
+        "private": bool(req.private),
+        "password": req.password if req.private else None,
+        "participants": [{"user_id": req.host_user_id, "joined_at": created_at}],  # host auto-joins
+        "participant_count": 1,
+        "start_address": req.start_address,
+        "destination_address": req.destination_address,
+        "start_coord": start_coord,
+        "dest_coord": dest_coord,
+        "created_at": created_at,
+        **route_info,
+    }
 
-# notify room starts here
+    # store room
+    async with ROOM_DB_LOCK:
+        ROOM_DB[room_id] = room_obj
 
-ROOM_DB: dict = {}
-ROOM_DB_LOCK = asyncio.Lock()
+    logger.info("Room created: %s host=%s name=%s", room_id, req.host_user_id, req.name)
 
-ROOM_WS_CONNECTIONS: dict = {}
-WS_LOCK = asyncio.Lock()
+    # notify websocket 
+    await notify_room(room_id, {"type": "system", "text": f"Room created: {req.name}", "ts": created_at})
 
-def now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return room_obj
 
-async def notify_room(room_id: str, message: dict):
-    async with WS_LOCK:
-        conns = set(ROOM_WS_CONNECTIONS.get(room_id, set()))
-    dead = []
-    for ws in conns:
-        try:
-            await ws.send_json(message)
-        except Exception:
-            dead.append(ws)
-    if dead:
-        async with WS_LOCK:
-            for d in dead:
-                ROOM_WS_CONNECTIONS.get(room_id, set()).discard(d)
-
-@app.get("/service/v1/my_bookings")
-async def get_bookings(user_id: str):
-    # Checks if the frontend actually sent a user_id
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id is required")
-
-    # Creating a new list containing the bookings the user makes
-    my_bookings = [b for b in BOOKINGS_DB if b["user_id"] == user_id]
-
-    # Sorts the user booking from newest to oldest the key=lambda tells the sort function to look at the timestamp
-    # Also the reverse=True just means that its sorted newest to oldest.
-    my_bookings.sort(key=lambda b: b["timestamp"], reverse=True)
-    # Should return a filtered and sorted list
-    return my_bookings
