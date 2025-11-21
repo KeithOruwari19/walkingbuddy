@@ -1,1 +1,294 @@
-/* style.css */
+/* Global Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #06070d;
+  color: #f4f4f7;
+  overflow: hidden;
+}
+
+/* Top Bar */
+.topbar {
+  height: 56px;
+  background: #10121c;
+  border-bottom: 1px solid #242637;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.logo {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.nav-links a {
+  color: #c3c6ff;
+  text-decoration: none;
+  margin-left: 20px;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: 0.15s;
+}
+
+.nav-links a:hover {
+  color: white;
+}
+
+.nav-links a.active {
+  background: #3949ab;
+  color: white;
+}
+
+/* Main Layout */
+.layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  background: #0b0d16;
+  border-right: 1px solid #242637;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.input-label {
+  font-size: 13px;
+  color: #b9bcdf;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #141726;
+  border: 1px solid #2b2e44;
+  border-radius: 6px;
+  color: #eef0ff;
+  font-size: 14px;
+}
+
+.text-input::placeholder {
+  color: #6e7190;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btn {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: 0.15s;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: #3949ab;
+  color: white;
+}
+
+.btn.primary:hover {
+  background: #283593;
+}
+
+.btn.secondary {
+  background: #1c1f2d;
+  color: #e0e2ff;
+}
+
+.btn.secondary:hover {
+  background: #12141e;
+}
+
+.btn.outline {
+  border: 1px solid #3949ab;
+  background: transparent;
+  color: #b4b8ff;
+}
+
+.btn.outline:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.info-box {
+  margin-top: 18px;
+  background: #111322;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 70px;
+  font-size: 14px;
+  color: #e8eaff;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #242637;
+  margin: 20px 0;
+}
+
+.hint-text {
+  font-size: 13px;
+  color: #9da0bf;
+  margin-bottom: 10px;
+}
+
+/* Create Room Form */
+.create-room-form {
+  background: #0b0d16;
+  padding: 24px;
+  margin-top: 20px;
+  border-radius: 8px;
+  border: 1px solid #242637;
+}
+
+.create-room-form h2 {
+  margin-bottom: 16px;
+}
+
+.create-room-form .input-label {
+  font-size: 13px;
+  color: #b9bcdf;
+  margin-top: 16px;
+}
+
+.create-room-form .text-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #141726;
+  border: 1px solid #2b2e44;
+  border-radius: 6px;
+  color: #eef0ff;
+  font-size: 14px;
+}
+
+.create-room-form .btn {
+  margin-top: 14px;
+}
+
+/* No Rooms Available Message */
+.no-rooms-message {
+  background: #111322;
+  color: #c3c6ff;
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.no-rooms-message p {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Rooms Page */
+.rooms-container {
+  padding: 24px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+  background: #06070d;
+}
+
+.room-card {
+  background: #0b0d16;
+  border: 1px solid #242637;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.room-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.room-meta {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #c3c6ff;
+}
+
+/* Chat Page */
+.chat-layout {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #06070d;
+}
+
+.message {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #141726;
+  border-radius: 8px;
+  max-width: 70%;
+  color: #e2e4ff;
+}
+
+.message.self {
+  background: #3949ab;
+  margin-left: auto;
+  color: white;
+}
+
+.chat-input-bar {
+  display: flex;
+  border-top: 1px solid #242637;
+  padding: 12px;
+  background: #0b0d16;
+}
+
+.chat-input-bar input {
+  flex: 1;
+  margin-right: 10px;
+}
+
+/* Scrollbars */
+.sidebar::-webkit-scrollbar,
+.rooms-container::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.rooms-container::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb {
+  background: #2b2e44;
+  border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.rooms-container::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track {
+  background: #0b0d16;
+}
