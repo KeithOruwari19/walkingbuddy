@@ -1,10 +1,20 @@
 # Imports
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+import os
+import asyncio
+import logging
+import uuid
+from datetime import datetime
+from typing import List, Optional, Dict, Set, Any
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import math  # only for haversine
-from typing import List, Optional
+
+# logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("main")
+
 # Constants
 app = FastAPI(title="WalkingBuddy Navigation + Rooms") 
 app.add_middleware(
@@ -14,22 +24,63 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-USER_AGENT = "CP317-Group-18-project (contact: dang1532@mylaurier.ca)"  # my email for nominatim
+USER_AGENT = "WalkingBuddy (contact: dang1532@mylaurier.ca)"  # my email for nominatim
 
-GEOCODE_CACHE: dict = {} # to store queries so that nominatim doesn't get repeat requests of the same content
+GEOCODE_CACHE: dict = {} # cache to reduce repeated nominatim lookups
 GEOCODE_CACHE_LOCK = asyncio.Lock()
 
+# in-memory room DB (single-instance prototype)
+ROOM_DB: Dict[str, Dict[str, Any]] = {}
+ROOM_DB_LOCK = asyncio.Lock()
+
+# websocket connections for rooms (rooms/chat backend can use these)
+ROOM_WS_CONNECTIONS: Dict[str, Set[WebSocket]] = {}
+WS_LOCK = asyncio.Lock()
+
+# models start here
 class RouteReq(BaseModel):
     start: str
     destination: str
     mode: str = "walking" 
 
-# this is going to define the models for booking system on the Walking Buddy
-class BookingRequest(BaseModel):
-    user_id: str
-    start_coord: List[float] # [lat, lon]
-    destination_address: str # Send address and geocode on backend
-    timestamp: str
+class RoomCreateReq(BaseModel):
+    name: str = Field(..., min_length=1)
+    host_user_id: str = Field(..., min_length=1)
+    start_address: str = Field(..., min_length=1)         
+    destination_address: str = Field(..., min_length=1)    
+    capacity: int = Field(4, gt=0)
+    private: bool = False 
+    password: str | None = None # only if password is true
+    mode: str = "walking"
+
+class RoomInfo(BaseModel):
+    id: str
+    name: str
+    host_user_id: str
+    capacity: int
+    private: bool
+    participant_count: int
+    participants: list
+    start_address: str
+    destination_address: str
+    start_coord: list | None = None
+    dest_coord: list | None = None
+    created_at: str
+    # navigation related starts here
+    route_distance_m: float | None = None
+    route_duration_s: float | None = None
+    route_polyline: list | None = None
+    route_steps: list | None = None
+    route_source: str | None = None  # 'osrm' or 'haversine_fallback'
+    route_error: str | None = None
+    created_at: str
+
+class JoinReq(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    password: str | None = None # only checked if private = true
+
+class LeaveReq(BaseModel):
+    user_id: str = Field(..., min_length=1)
 
 async def geocode_nominatim(address: str):
     url = "https://nominatim.openstreetmap.org/search"
@@ -37,7 +88,7 @@ async def geocode_nominatim(address: str):
     headers = {"User-Agent": USER_AGENT}
     async with httpx.AsyncClient(timeout=10.0) as client:
 # honestly nominatim lookup should only take a couple hundred ms
-# but I made timeout 5s cuz my internet is straight ASS so its just to make sure
+# but I made timeout 10s just to make sure
         r = await client.get(url, params=params, headers=headers)
     r.raise_for_status()
     data = r.json()
@@ -129,47 +180,6 @@ async def get_route(req: RouteReq):
             "fallback": True,
             "error": str(e)
         }
-
-# Models start here
-
-class RoomCreateReq(BaseModel):
-    name: str = Field(..., min_length=1)
-    host_user_id: str = Field(..., min_length=1)
-    start_address: str = Field(..., min_length=1)         
-    destination_address: str = Field(..., min_length=1)    
-    capacity: int = Field(4, gt=0)
-    private: bool = False 
-    password: str | None = None # only if password is true
-    mode: str = "walking"
-
-class RoomInfo(BaseModel):
-    id: str
-    name: str
-    host_user_id: str
-    capacity: int
-    private: bool
-    participant_count: int
-    participants: list
-    start_address: str
-    destination_address: str
-    start_coord: list | None = None
-    dest_coord: list | None = None
-    created_at: str
-    # navigation related starts here
-    route_distance_m: float | None = None
-    route_duration_s: float | None = None
-    route_polyline: list | None = None
-    route_steps: list | None = None
-    route_source: str | None = None  # 'osrm' or 'haversine_fallback'
-    route_error: str | None = None
-    created_at: str
-
-class JoinReq(BaseModel):
-    user_id: str = Field(..., min_length=1)
-    password: str | None = None # only checked if private = true
-
-class LeaveReq(BaseModel):
-    user_id: str = Field(..., min_length=1)
 
 # notify room starts here
 
