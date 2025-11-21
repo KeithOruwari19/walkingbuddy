@@ -1,1 +1,63 @@
-<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laurier Navigator</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="logo">Laurier Navigator</div>
+    <nav class="nav-links">
+      <a href="index.html" class="active">Navigation</a>
+      <a href="rooms.html">Rooms</a>
+      <a href="login.html">Login</a>
+      <a href="signup.html">Sign Up</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+
+    <section class="sidebar">
+
+      <h1 class="section-title">Plan Your Route</h1>
+
+      <label class="input-label">Start</label>
+      <input id="start-input" class="text-input" placeholder="Enter start address" />
+
+      <label class="input-label">Destination</label>
+      <input id="dest-input" class="text-input" placeholder="Enter destination" />
+
+      <div class="button-row">
+        <button id="btn-get-route" class="btn primary">Get Route</button>
+        <button id="btn-use-location" class="btn secondary">Use My Location</button>
+      </div>
+
+      <div id="route-info" class="info-box">
+        <p>No route loaded.</p>
+      </div>
+
+      <hr class="divider" />
+
+      <h2 class="section-title small">WalkingBuddy</h2>
+      <p class="hint-text">Load a route to create a room.</p>
+
+      <button id="btn-create-room" class="btn outline" disabled>Create Room</button>
+
+    </section>
+
+    <section class="map-area">
+      <div id="map"></div>
+    </section>
+
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="./modules/app.js"></script>
+
+</body>
+</html>
