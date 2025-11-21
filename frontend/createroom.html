@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Room - Laurier Navigator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="logo">Create a Room</div>
+    <nav class="nav-links">
+      <a href="index.html">Navigation</a>
+      <a href="rooms.html">Rooms</a>
+    </nav>
+  </header>
+
+  <main class="rooms-container">
+    <h1 class="section-title">Create a New Room</h1>
+
+    <!-- Room Creation Form -->
+    <div id="create-room-form" class="create-room-form">
+      <label class="input-label">Room Name</label>
+      <input id="room-name" class="text-input" placeholder="Enter room name" />
+
+      <label class="input-label">Meet Time</label>
+      <input id="meet-time" class="text-input" type="datetime-local" />
+
+      <label class="input-label">Start Location</label>
+      <input id="start-location" class="text-input" placeholder="Start location" />
+
+      <label class="input-label">Destination</label>
+      <input id="destination" class="text-input" placeholder="Destination" />
+
+      <button id="btn-create-room" class="btn primary">Create Room</button>
+    </div>
+
+  </main>
+
+  <script type="module" src="./modules/createroom.js"></script>
+
+</body>
+</html>
