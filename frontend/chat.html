@@ -1,1 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="logo">Room Chat</div>
+    <nav class="nav-links">
+      <a href="rooms.html">Back to Rooms</a>
+    </nav>
+  </header>
+
+  <main class="chat-layout">
+
+    <div class="chat-messages" id="chat-messages"></div>
+
+    <div class="chat-input-bar">
+      <input id="chat-input" class="text-input" placeholder="Type a message..." />
+      <button id="chat-send" class="btn primary">Send</button>
+    </div>
+
+  </main>
+
+  <script type="module" src="./modules/chat.js"></script>
+
+</body>
+</html>
 
