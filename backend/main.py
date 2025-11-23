@@ -159,7 +159,7 @@ def haversine_km(a, b):  # just in case osrm fails
     hav = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     return 2 * R * math.asin(math.sqrt(hav))
 
-
+# create a room
 @app.post("/service/v1/walking_buddy")
 async def create_room(req: RoomCreateReq, request: Request, response: Response):
     session_user = get_session_user(request)
@@ -239,3 +239,134 @@ async def create_room(req: RoomCreateReq, request: Request, response: Response):
 
     return room_obj
 
+# list rooms
+@app.get("/service/v1/rooms")
+async def list_rooms(public_only: Optional[bool] = Query(True)):
+    async with ROOM_DB_LOCK:
+        rooms = list(ROOM_DB.values())
+    if public_only:
+        rooms = [r for r in rooms if not r.get("private", False)]
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "host_user_id": r["host_user_id"],
+            "capacity": r["capacity"],
+            "participant_count": r["participant_count"],
+            "private": r["private"],
+            "start_address": r["start_address"],
+            "destination_address": r["destination_address"],
+            "created_at": r["created_at"],
+            "route_distance_m": r.get("route_distance_m"),
+        }
+        for r in rooms
+    ]
+
+# get a specific room
+@app.get("/service/v1/rooms/{room_id}")
+async def get_room(room_id: str):
+    async with ROOM_DB_LOCK:
+        room = ROOM_DB.get(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="room not found")
+    return room
+
+# join room (session cookie must exist and match req.user_id)
+@app.post("/service/v1/rooms/{room_id}/join")
+async def join_room(room_id: str, req: JoinReq, request: Request):
+    session_user = get_session_user(request)
+    if not session_user:
+        raise HTTPException(status_code=401, detail="authentication required (session cookie)")
+    if session_user != req.user_id:
+        raise HTTPException(status_code=403, detail="session user does not match user_id")
+
+    async with ROOM_DB_LOCK:
+        room = ROOM_DB.get(room_id)
+        if not room:
+            raise HTTPException(status_code=404, detail="room not found")
+
+        if room["participant_count"] >= room["capacity"]:
+            raise HTTPException(status_code=403, detail="room is full")
+
+        if room.get("private"):
+            if not req.password or req.password != room.get("password"):
+                raise HTTPException(status_code=403, detail="wrong password")
+
+        if any(p.get("user_id") == req.user_id for p in room.get("participants", [])):
+            return room
+
+        join_time = now_iso()
+        room["participants"].append({"user_id": req.user_id, "joined_at": join_time})
+        room["participant_count"] = len(room["participants"])
+
+    await notify_room(room_id, {"type": "system", "text": f"{req.user_id} joined", "ts": now_iso()})
+    logger.info("User %s joined room %s", req.user_id, room_id)
+    return room
+
+# leave room
+@app.post("/service/v1/rooms/{room_id}/leave")
+async def leave_room(room_id: str, req: LeaveReq, request: Request):
+    session_user = get_session_user(request)
+    if not session_user:
+        raise HTTPException(status_code=401, detail="authentication required (session cookie)")
+
+    if session_user != req.user_id:
+        raise HTTPException(status_code=403, detail="session user does not match user_id")
+
+    async with ROOM_DB_LOCK:
+        room = ROOM_DB.get(room_id)
+        if not room:
+            raise HTTPException(status_code=404, detail="room not found")
+
+        room["participants"] = [p for p in room.get("participants", []) if p.get("user_id") != req.user_id]
+        room["participant_count"] = len(room["participants"])
+
+        if room["participant_count"] == 0:
+            ROOM_DB.pop(room_id, None)
+            async with WS_LOCK:
+                ROOM_WS_CONNECTIONS.pop(room_id, None)
+            logger.info("Room %s removed (empty)", room_id)
+            return {"status": "removed", "room_id": room_id}
+
+    await notify_room(room_id, {"type": "system", "text": f"{req.user_id} left", "ts": now_iso()})
+    logger.info("User %s left room %s", req.user_id, room_id)
+    return room
+
+# get rooms for user
+@app.get("/service/v1/my_rooms")
+async def my_rooms(user_id: str = Query(..., min_length=1)):
+    async with ROOM_DB_LOCK:
+        rooms = [
+            r
+            for r in ROOM_DB.values()
+            if r["host_user_id"] == user_id or any(p.get("user_id") == user_id for p in r.get("participants", []))
+        ]
+    rooms.sort(key=lambda r: r["created_at"], reverse=True)
+    return rooms
+
+# websocket notify helper for chat_routes
+async def notify_room(room_id: str, message: dict):
+    async with WS_LOCK:
+        conns = set(ROOM_WS_CONNECTIONS.get(room_id, set()))
+    dead = []
+    for ws in conns:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            dead.append(ws)
+    if dead:
+        async with WS_LOCK:
+            for d in dead:
+                ROOM_WS_CONNECTIONS.get(room_id, set()).discard(d)
+
+# FOR TESTING, DELETE THIS LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+@app.post("/service/v1/dev/session_create")
+async def dev_session_create(request: Request, response: Response, user_id: str = Query(..., min_length=1)):
+    request.session["user_id"] = user_id
+    return {"status": "ok", "user_id": user_id}
+
+
+@app.post("/service/v1/dev/session_delete")
+async def dev_session_delete(request: Request, response: Response):
+    request.session.clear()
+    return {"status": "ok"}
