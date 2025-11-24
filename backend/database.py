@@ -17,11 +17,11 @@ class RoomDatabase:
   def create_room(
     room_id: str,
     creator_id: str,
-    destination: str
+    destination: str,
     start_coord: List[float],
     dest_coord: List[float],
     max_members: int = 10
-) -> Dict:
+  ) -> Dict:
     if room_id in ROOMS_DB:
       raise ValueError(f"Room {room_id} already exist")
 
@@ -58,7 +58,7 @@ class RoomDatabase:
     room = ROOMS_DB.get(room_id)
 
     if not room:
-      raise ValueEroor(f"Room {room_id} not found")
+      raise ValueError(f"Room {room_id} not found")
 
     if user_id in room["members"]:
       raise ValueError(f"User {user_id} already in room")
@@ -74,7 +74,7 @@ class RoomDatabase:
     room = ROOMS_DB.get(room_id)
 
     if not room:
-      raise ValueError(f"User {user_id} not in room")
+      raise ValueError(f"User {user_id} not found")
 
     room["members"].remove(user_id)
 
@@ -114,6 +114,7 @@ class ChatDatabase:
       return messages[-limit:]
     return messages
 
+  @staticmethod
   def clear_room_chat(room_id: str) -> bool:
     if room_id in CHAT_DB:
       CHAT_DB[room_id] = []
