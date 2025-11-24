@@ -64,14 +64,14 @@ def list_rooms():
 @router.post("/join")
 def join_room(req: JoinRoomRequest):
   try: 
-    rooms = RoomDatabase.join_room(req.room_id, req.user_id)
+    room = RoomDatabase.join_room(req.room_id, req.user_id)
 
     return {
       "success": True,
       "room": room,
       "message": f"User {req.user_id} joined room {req.room_id}."
     }
-  except ValueError as e
+  except ValueError as e:
     if "not found" in str(e):
       raise HTTPException(status_code=404, detail=str(e))
     else:
@@ -101,7 +101,7 @@ def update_room_status(req: UpdateRoomStatusRequest):
     return {
       "success": True,
       "room": room,
-      "message": f"User {req.user_id} status updated to {req.status}."
+      "message": f"Room {req.room_id} status updated to '{req.status}'."
     }
   except ValueError as e:
     raise HTTPException(status_code=404, detail=str(e))
