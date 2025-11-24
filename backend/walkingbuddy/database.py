@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import uuid
 
-ROOMS_DB: Dict [str, Dict] = {}
+ROOMS_DB: Dict[str, Dict] = {}
 CHAT_DB: Dict[str, List[Dict]] = {}
 
 class RoomDatabase:
@@ -76,6 +76,9 @@ class RoomDatabase:
     if not room:
       raise ValueError(f"Room {room_id} not found")
 
+    if user_id not in room["members"]:
+      raise ValueError(f"User {user_id} not found")
+      
     room["members"].remove(user_id)
 
     if len(room["members"]) == 0:
@@ -88,7 +91,7 @@ class RoomDatabase:
     room = ROOMS_DB.get(room_id)
 
     if not room:
-      raise ValueError(f"Room {room_id} not  found")
+      raise ValueError(f"Room {room_id} not found")
 
     room["status"] = status
     return room
