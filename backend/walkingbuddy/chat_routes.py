@@ -24,7 +24,7 @@ class SendMessageRequest(BaseModel):
 def send_message(req: SendMessageRequest):
   room = RoomDatabase.get_room(req.room_id)
   if not room:
-    raise HTTPExcepotion(status_code=404, detail=f"Room {req.room_id} not found")
+    raise HTTPException(status_code=404, detail=f"Room {req.room_id} not found")
 
   if req.user_id not in room["members"]:
     raise HTTPException(status_code=403, detail="User not in room")
