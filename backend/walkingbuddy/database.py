@@ -23,7 +23,7 @@ class RoomDatabase:
     max_members: int = 10
   ) -> Dict:
     if room_id in ROOMS_DB:
-      raise ValueError(f"Room {room_id} already exist")
+      raise ValueError(f"Room {room_id} already exists")
 
     room = {
       "room_id": room_id,
@@ -74,13 +74,14 @@ class RoomDatabase:
     room = ROOMS_DB.get(room_id)
 
     if not room:
-      raise ValueError(f"User {user_id} not found")
+      raise ValueError(f"Room {room_id} not found")
 
     room["members"].remove(user_id)
 
     if len(room["members"]) == 0:
       room["status"] = "complete"
-      return room
+    
+    return room
 
   @staticmethod
   def update_room_status(room_id: str, status: str) -> Dict:
