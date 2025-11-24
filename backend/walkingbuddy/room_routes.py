@@ -11,12 +11,11 @@ This file handles all the room-related operations which include:
 
 from fastapi import APIRouter, HTTPException
 from  pydantic import BaseModel
-from typing import List, Dict
+from typing import List
 import uuid
+from .database import RoomDatabase
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
-
-ROOMS_DB: Dict[str, Dict] = {}
 
 class CreateRoomRequest(BaseModel):
   user_id: str
@@ -39,52 +38,70 @@ class UpdateRoomStatusRequest(BaseModel):
 
 @router.post("/create")
 def create_room(req: CreateRoomRequest):
-  room_id = str(uuid.uuid4())[:8]
-  room = {
-    "room_id": room_id,
-    "creator_id": req.user_id,
-    "destination": req.destination,
-    "start_coord": req.start_coord,
-    "dest_coord": req.max_members,
-    "members": [req.user_id],
-    "status": "active"
-  }
-  ROOMS_DB[room_id] = room
-  return {"success": True, "room": room, "message":  f"Room {room_id} created."}
+  try:
+    room_id = str(uuid.uuid4())[:8]
+    room = RoomDatabase.create_room(
+      room_id =  room_id,
+      creator_id =  req.user_id,
+      destination = req.destination,
+      start_coord = req.start_coord,
+      dest_coord =  req.dest_coord,
+      max_members = req.max_members
+    )
+    return {
+      "success": True, 
+      "room": room, 
+      "message":  f"Room {room_id} created."
+    }
+  except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/list")
 def list_rooms():
-  rooms = [room for room in ROOMS_DB.values() if room["status"] == "active"]
+  rooms = RoomDatabase.get_active_rooms()
   return {"success": True, "rooms": rooms}
 
 @router.post("/join")
 def join_room(req: JoinRoomRequest):
-  rooms = ROOMS_DB.get(req.room_id)
-  if not room:
-    raise HTTPException(status_code=404, detail="Room does not exist.")
-  if req.user_id in room["members"]:
-    raise HTTPException(status_code=400, detail="User is already in room.")
-  if len(room["members"]) >= room["max_members"]:
-    raise HTTPException(status_code=400, detail="Room is full.")
-  return {"success": True, "room": room, "message":  "User joined the room."}
+  try: 
+    rooms = RoomDatabase.join_room(req.room_id, req.user_id)
+
+    return {
+      "success": True,
+      "room": room,
+      "message": f"User {req.user_id} joined room {req.room_id}."
+    }
+  except ValueError as e
+    if "not found" in str(e):
+      raise HTTPException(status_code=404, detail=str(e))
+    else:
+      raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/leave")
 def leave_room(req: LeaveRoomRequest):
-  rooms = ROOMS_DB.get(req.room_id)
-  if not room:
-    raise HTTPException(status_code=404, detail="Room not found.")
-  if req.user_id not in room["members"]:
-    raise HTTPException(status_code=400, detail="User is not in room.")
-  room["members"].remove(req.user_id)
-  if len(room["members"]) == 0:
-    room["status"] = "complete"
-  return {"success": True, "room": room, "message":  "User left the room."}
+  try:
+    room = RoomDatabase.leave_room(req.room_id, req.user_id)
+  
+    return {
+      "success": True,
+      "room": room,
+      "message": f"User {req.user_id} left room {req.room_id}."
+    }
+  except ValueError as e:
+    if "not found" in str(e):
+      raise HTTPException(status_code=404, detail=str(e))
+    else:
+      raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/status")
 def update_room_status(req: UpdateRoomStatusRequest):
-  room = ROOMS_DB.get(req.room_id)
-  if not room:
-    raise HTTPException(status_code=404, detail="Room not found.")
-  room["status"] = req.status
-  return {"success": True, "room": room, "message": f"Status set to {req.status}."}
-  
+  try:
+    room = RoomDatabase.update_room_status(req.room_id, req.status)
+
+    return {
+      "success": True,
+      "room": room,
+      "message": f"User {req.user_id} status updated to {req.status}."
+    }
+  except ValueError as e:
+    raise HTTPException(status_code=404, detail=str(e))
