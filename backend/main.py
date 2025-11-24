@@ -1,3 +1,14 @@
+"""
+-------------------------------------------------------
+main.py dictates the main logic for the program, including
+functions for navigation and general stuff related to rooms
+-------------------------------------------------------
+Author:  Ben Dang
+ID:      169071532
+Email:   dang1532@mylaurier.ca
+__updated__ = "2025-11-23"
+-------------------------------------------------------
+"""
 # Imports
 import os
 import asyncio
@@ -109,9 +120,9 @@ async def geocode_nominatim(address: str):
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": address, "format": "json", "limit": 1}
     headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout 60.0) as client:
 # honestly nominatim lookup should only take a couple hundred ms
-# but I made timeout 10s just to make sure
+# but I made timeout 1m just to make sure
         r = await client.get(url, params=params, headers=headers)
     r.raise_for_status()
     data = r.json()
