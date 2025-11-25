@@ -29,7 +29,7 @@ app = FastAPI(title="WalkingBuddy Navigation + Rooms")
 app.add_middleware(
     CORSMiddleware,
     # I know we had the code below as a placeholder but now we should have frontend to initialize this
-    allow_origins=["https://KeithOruwari19.github.io", "https://cp317-group-18-project.onrender.com"], 
+    allow_origins=["https://keithoruwari19.github.io", "https://cp317-group-18-project.onrender.com"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
