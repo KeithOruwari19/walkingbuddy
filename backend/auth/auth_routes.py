@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional
 
-import auth_storage
+from backend.auth import auth_storage
 
 # Create router with prefix and tags
 router = APIRouter(prefix="/auth", tags=["authentication"])
