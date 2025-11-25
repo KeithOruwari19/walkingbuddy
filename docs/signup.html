@@ -5,13 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign Up - Laurier Navigator</title>
   <link rel="stylesheet" href="style.css" />
-  <style>
-    .msg { margin-top: 12px; padding: 8px; border-radius: 6px; display:none; }
-    .msg.error { background:#ffd6d6; color:#800; }
-    .msg.success { background:#e6ffea; color:#064; }
-    .auth-wrapper { display:flex; align-items:center; justify-content:center; min-height:100vh; }
-    .auth-card { width:360px; padding:20px; box-shadow:0 4px 12px rgba(0,0,0,0.08); border-radius:8px; background:#fff; }
-  </style>
 </head>
 <body>
 
@@ -20,35 +13,28 @@
 
       <h1 class="auth-title">Create Account</h1>
 
-      <form id="signupForm" autocomplete="off" novalidate>
-        <label class="input-label" for="name">Full Name</label>
-        <input id="name" name="name" type="text" class="text-input auth-input" placeholder="Your name" required />
+      <label class="input-label">Full Name</label>
+      <input type="text" class="text-input auth-input" placeholder="Your name" />
 
-        <label class="input-label" for="email">MyLaurier Email</label>
-        <input id="email" name="email" type="email" class="text-input auth-input" placeholder="you@mylaurier.ca" required />
+      <label class="input-label">MyLaurier Email</label>
+      <input type="email" class="text-input auth-input" placeholder="you@mylaurier.ca" />
 
-        <label class="input-label" for="password">Password</label>
-        <input id="password" name="password" type="password" class="text-input auth-input" placeholder="Create password" minlength="8" required />
+      <label class="input-label">Password</label>
+      <input type="password" class="text-input auth-input" placeholder="Create password" />
 
-        <label class="input-label">Profile Picture (Optional)</label>
-        <input id="avatar" name="avatar" type="file" class="file-input" accept="image/*" />
+      <label class="input-label">Profile Picture (Optional)</label>
+      <input type="file" class="file-input" accept="image/*" />
 
-        <button id="signupBtn" class="btn primary auth-btn" type="submit">Sign Up</button>
+      <button class="btn primary auth-btn">Sign Up</button>
 
-        <p class="auth-footer" style="margin-top:12px;">
-          Already have an account? <a href="login.html" class="auth-link">Login</a>
-        </p>
-
-        <div id="msgSuccess" class="msg success"></div>
-        <div id="msgError" class="msg error"></div>
-      </form>
+      <p class="auth-footer">
+        Already have an account? <a href="login.html" class="auth-link">Login</a>
+      </p>
 
     </div>
   </div>
-
 <script>
 (() => {
-
   const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
 
   const form = document.getElementById('signupForm');
@@ -100,6 +86,7 @@
       if (res.status === 201) {
         showSuccess(data.message || 'Signup successful. Redirecting...');
         setTimeout(()=> {
+          // Adjust redirect path if needed
           window.location.href = window.location.origin + '/walkingbuddy/dashboard.html';
         }, 900);
       } else {
@@ -115,6 +102,9 @@
     }
   });
 })();
+</script>
+</body>
+</html>
 </script>
 
 </body>
