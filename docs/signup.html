@@ -53,6 +53,11 @@
     msgError.style.display = 'block';
   }
 
+  if (!form || !btn) {
+    console.error("Signup elements missing");
+    return;
+  }
+  
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     msgError.style.display = 'none';
@@ -86,8 +91,7 @@
       if (res.status === 201) {
         showSuccess(data.message || 'Signup successful. Redirecting...');
         setTimeout(()=> {
-          // Adjust redirect path if needed
-          window.location.href = window.location.origin + '/walkingbuddy/dashboard.html';
+          window.location.href = window.location.origin + '/walkingbuddy/index.html';
         }, 900);
       } else {
         const detail = data.detail || data.message || data.error || JSON.stringify(data) || res.statusText;
