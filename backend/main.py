@@ -33,7 +33,7 @@ app.add_middleware(
 
 # Nauman's part should now work with backend
 SESSION_SECRET = os.getenv("SESSION_SECRET", "placeholder-session-secret") # placeholder so that website doesn't crash
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="none", https_only=True)
 
  # Connecting all the modules via router
 app.include_router(auth_routes.router)
