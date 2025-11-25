@@ -86,10 +86,8 @@
       const km = (route.distance_m / 1000).toFixed(2);
       const mins = Math.round(route.duration_s / 60);
       showRouteInfo(`Distance: ${km} km • ETA: ${mins} min`);
-      // geometry expected as array of [lat, lon]
       if (route.geometry && route.geometry.length) {
         await plotRouteOnMap(route.geometry);
-        // enable create room now that route exists
         if (btnCreateRoom) btnCreateRoom.disabled = false;
       }
     } catch (err) {
@@ -100,20 +98,17 @@
     }
   }
 
-  function reverseGeocode(lat, lon) {
-    // Nominatim reverse geocoding (client-side). We're careful to not set a custom User-Agent.
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
-    return fetch(url, { method: 'GET' })
-      .then(r => r.ok ? r.json() : Promise.reject('reverse geocode failed'))
-      .then(json => {
-        // Choose a human-friendly display name
-        return json.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-      })
-      .catch(err => {
-        console.warn('Reverse geocode error', err);
-        return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-      });
-  }
+  async function reverseGeocode(lat, lon) {
+  const res = await fetch(
+    `${BACKEND_BASE}/api/navigation/reverse?lat=${lat}&lon=${lon}`,
+    { credentials: "include" }
+  );
+
+  const data = await res.json();
+  if (!data.success) throw new Error("Failed to reverse geocode");
+
+  return data.address;
+}
 
   async function useMyLocation() {
     if (!navigator.geolocation) {
