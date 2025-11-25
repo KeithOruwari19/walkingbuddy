@@ -12,6 +12,9 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 # Importing the modules
 # Nauman
@@ -20,6 +23,7 @@ from backend.auth import auth_routes
 # Sinthujan 
 from backend.walkingbuddy import room_routes, chat_routes
 
+logger.info("CORS allow_origins = %s", ["https://KeithOruwari19.github.io", "https://cp317-group-18-project.onrender.com"])
 # fastapi
 app = FastAPI(title="WalkingBuddy Navigation + Rooms") 
 app.add_middleware(
@@ -42,6 +46,10 @@ app.include_router(chat_routes.router)
 
 
 USER_AGENT = "WalkingBuddy/1.0"
+
+@app.on_event("startup")
+async def _log_routes():
+    logger.info("Registered routes: %s", [r.path for r in app.routes])
 
 @app.get("/api/navigation/route")
 async def get_route_data(start: str, destination: str, mode: str = "walking"):
