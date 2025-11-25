@@ -8,6 +8,9 @@ import uuid
 import hashlib
 import secrets
 from typing import Optional, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Configuration
 ALLOWED_EMAIL_DOMAIN = "@mylaurier.ca"
@@ -90,11 +93,11 @@ def create_user(name: str, email: str, password: str) -> Optional[Dict]:
     email = _normalize_email(email)
     
     if not _is_laurier_email(email):
-        return None
+        raise ValueError("Email must be a @mylaurier.ca address.")
     if email in USERS_BY_EMAIL:
-        return None
+        raise ValueError("Email already registered.")
     if not name or not password or len(password) < 8:
-        return None
+        raise ValueError("Name required and password must be at least 8 characters.")
     
     user_id = str(uuid.uuid4())
     user = {
