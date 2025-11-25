@@ -8,6 +8,200 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
+<script>
+(() => {
+  const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
+
+  const btnGetRoute = document.getElementById('btn-get-route');
+  const btnUseLocation = document.getElementById('btn-use-location');
+  const btnCreateRoom = document.getElementById('btn-create-room');
+  const startInput = document.getElementById('start-input');
+  const destInput = document.getElementById('dest-input');
+  const routeInfo = document.getElementById('route-info');
+  const navLinks = document.querySelector('.nav-links');
+
+  let map = window.map || null;
+  let currentRouteLayer = null;
+
+  function ensureMap() {
+    if (map) return map;
+    if (typeof L === 'undefined') {
+      console.warn('Leaflet not loaded; map features disabled.');
+      return null;
+    }
+    map = L.map('map').setView([43.4723, -80.5449], 14); 
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    window.map = map; 
+    return map;
+  }
+
+  function showRouteInfo(text) {
+    routeInfo.innerHTML = `<p>${text}</p>`;
+  }
+
+  function clearRouteOnMap() {
+    if (currentRouteLayer && map) {
+      try { map.removeLayer(currentRouteLayer); } catch(e) {}
+      currentRouteLayer = null;
+    }
+  }
+
+  async function plotRouteOnMap(geometry) {
+    const m = ensureMap();
+    if (!m) return;
+    clearRouteOnMap();
+    currentRouteLayer = L.polyline(geometry, { weight: 4 });
+    currentRouteLayer.addTo(m);
+    try {
+      m.fitBounds(currentRouteLayer.getBounds(), { padding: [30,30] });
+    } catch (e) {}
+  }
+
+  async function getRoute() {
+    const start = startInput.value.trim();
+    const dest = destInput.value.trim();
+    if (!start) { showRouteInfo('Please enter a start address.'); return; }
+    if (!dest)  { showRouteInfo('Please enter a destination.'); return; }
+
+    showRouteInfo('Loading route...');
+    btnGetRoute.disabled = true;
+
+    try {
+      const url = `${BACKEND_BASE}/api/navigation/route?start=${encodeURIComponent(start)}&destination=${encodeURIComponent(dest)}&mode=walking`;
+      const res = await fetch(url, { method: 'GET' });
+      if (!res.ok) {
+        const body = await res.text().catch(()=>res.statusText);
+        showRouteInfo(`Route error: ${res.status} ${body}`);
+        return;
+      }
+      const data = await res.json();
+      if (!data.success) {
+        showRouteInfo('Route failed: ' + (data.error || 'unknown'));
+        return;
+      }
+      const route = data.route;
+      // distance in meters, duration in seconds
+      const km = (route.distance_m / 1000).toFixed(2);
+      const mins = Math.round(route.duration_s / 60);
+      showRouteInfo(`Distance: ${km} km • ETA: ${mins} min`);
+      // geometry expected as array of [lat, lon]
+      if (route.geometry && route.geometry.length) {
+        await plotRouteOnMap(route.geometry);
+        // enable create room now that route exists
+        if (btnCreateRoom) btnCreateRoom.disabled = false;
+      }
+    } catch (err) {
+      console.error('getRoute error', err);
+      showRouteInfo('Network or server error while getting route.');
+    } finally {
+      btnGetRoute.disabled = false;
+    }
+  }
+
+  function reverseGeocode(lat, lon) {
+    // Nominatim reverse geocoding (client-side). We're careful to not set a custom User-Agent.
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+    return fetch(url, { method: 'GET' })
+      .then(r => r.ok ? r.json() : Promise.reject('reverse geocode failed'))
+      .then(json => {
+        // Choose a human-friendly display name
+        return json.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      })
+      .catch(err => {
+        console.warn('Reverse geocode error', err);
+        return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      });
+  }
+
+  async function useMyLocation() {
+    if (!navigator.geolocation) {
+      showRouteInfo('Geolocation not supported by this browser.');
+      return;
+    }
+    btnUseLocation.disabled = true;
+    showRouteInfo('Getting current location…');
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const addr = await reverseGeocode(lat, lon);
+      startInput.value = addr;
+      showRouteInfo('Start set to your location. Now enter destination and click Get Route.');
+      btnUseLocation.disabled = false;
+    }, (err) => {
+      console.warn('geolocation error', err);
+      showRouteInfo('Could not get location: ' + (err.message || 'permission denied'));
+      btnUseLocation.disabled = false;
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 });
+  }
+
+  async function checkSessionAndUpdateNav() {
+    try {
+      const res = await fetch(`${BACKEND_BASE}/auth/verify`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const user = await res.json();
+        setLoggedInNav(user);
+      } else {
+      }
+    } catch (err) {
+      console.warn('session check error', err);
+    }
+  }
+
+  function setLoggedInNav(user) {
+    if (!navLinks) return;
+    const loginA = navLinks.querySelector('a[href="login.html"]');
+    const signupA = navLinks.querySelector('a[href="signup.html"]');
+
+    try {
+      if (loginA) loginA.remove();
+      if (signupA) signupA.remove();
+    } catch(e) {}
+
+    const greet = document.createElement('span');
+    greet.textContent = user.name ? `Hi, ${user.name}` : 'Hi';
+    greet.style.marginLeft = '8px';
+    greet.style.color = '#fff';
+    greet.style.fontWeight = '600';
+
+    const logoutA = document.createElement('a');
+    logoutA.href = '#';
+    logoutA.textContent = 'Logout';
+    logoutA.className = 'auth-link';
+    logoutA.style.marginLeft = '10px';
+    logoutA.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await fetch(`${BACKEND_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+      } catch(err) { console.warn('logout error', err); }
+      window.location.reload();
+    });
+
+    navLinks.appendChild(greet);
+    navLinks.appendChild(logoutA);
+  }
+
+  if (btnGetRoute) btnGetRoute.addEventListener('click', (e)=>{ e.preventDefault(); getRoute(); });
+  if (btnUseLocation) btnUseLocation.addEventListener('click', (e)=>{ e.preventDefault(); useMyLocation(); });
+
+  if (destInput) {
+    destInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); getRoute(); }
+    });
+  }
+
+  window.addEventListener('load', () => {
+    ensureMap();
+    checkSessionAndUpdateNav();
+  });
+
+})();
+</script>
 <body>
 
   <header class="topbar">
