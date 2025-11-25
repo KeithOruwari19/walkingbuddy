@@ -97,6 +97,20 @@ async def osrm_route(from_coord, to_coord, mode="driving"):  # osrm api
     geometry = [[p[1], p[0]] for p in route["geometry"]["coordinates"]]
     return {"distance_m": route["distance"], "duration_s": route["duration"], "geometry": geometry} 
 
+@router.get("/reverse")
+async def reverse_geocode(lat: float, lon: float):
+    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        res = await client.get(url, headers={"User-Agent": "walkingbuddy/1.0"})
+    
+    data = res.json()
+
+    return {
+        "address": data.get("display_name"),
+        "raw": data
+    }
+
 if __name__ =="__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
