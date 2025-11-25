@@ -65,7 +65,7 @@ async def geocode_nominatim(address: str):
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": address, "format": "json", "limit": 1}
     headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(timeout 60.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
 # honestly nominatim lookup should only take a couple hundred ms
 # but I made timeout 1m just to make sure
         r = await client.get(url, params=params, headers=headers)
@@ -82,8 +82,7 @@ async def osrm_route(from_coord, to_coord, mode="driving"):  # osrm api
     # overview=full for full geometry
     # geometries=geojson returns coordinates as arrays
     # steps=true for instructions
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # route computation is more complex so I quadrupled the timeout to 20s
+    async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.get(url, params=params)
     if r.status_code != 200:
         raise ValueError("OSRM route failed")
