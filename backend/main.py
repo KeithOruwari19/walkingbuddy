@@ -97,19 +97,30 @@ async def osrm_route(from_coord, to_coord, mode="driving"):  # osrm api
     geometry = [[p[1], p[0]] for p in route["geometry"]["coordinates"]]
     return {"distance_m": route["distance"], "duration_s": route["duration"], "geometry": geometry} 
 
-@app.get("/reverse")
+@app.get("/api/navigation/reverse")
 async def reverse_geocode(lat: float, lon: float):
-    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+    try:
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "format": "json",
+        }
+        headers = {"User-Agent": USER_AGENT}
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        res = await client.get(url, headers={"User-Agent": "walkingbuddy/1.0"})
-    
-    data = res.json()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(url, params=params, headers=headers)
 
-    return {
-        "address": data.get("display_name"),
-        "raw": data
-    }
+        data = r.json()
+
+        address = data.get("display_name")
+        if not address:
+            raise ValueError("Address not found")
+
+        return {"success": True, "address": address, "raw": data}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 if __name__ =="__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
