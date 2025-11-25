@@ -1,6 +1,6 @@
 """
 -------------------------------------------------------
-main.py connects all the modules together
+main.py dictates the main backend logic for the program
 -------------------------------------------------------
 __updated__ = "2025-11-25"
 -------------------------------------------------------
@@ -15,10 +15,10 @@ from starlette.middleware.sessions import SessionMiddleware
 
 # Importing the modules
 # Nauman
-from auth import auth_routes
+from backend.auth import auth_routes
 
 # Sinthujan 
-from walkingbuddy import room_routes, chat_routes
+from backend.walkingbuddy import room_routes, chat_routes
 
 # fastapi
 app = FastAPI(title="WalkingBuddy Navigation + Rooms") 
