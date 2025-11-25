@@ -1,7 +1,6 @@
 """
 -------------------------------------------------------
-main.py dictates the main logic for the program, including
-functions for navigation and general stuff related to rooms
+main.py connects all the modules together
 -------------------------------------------------------
 Author:  Ben Dang
 ID:      169071532
