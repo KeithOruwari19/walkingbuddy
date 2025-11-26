@@ -8,17 +8,19 @@ This file handles all chat related operations which include:
 - Clearing chat history
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 from .database import ChatDatabase, RoomDatabase
+
+from backend.auth import auth_storage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 class SendMessageRequest(BaseModel):
     room_id: str
     user_id: str
-    content: str   # FIXED: must match frontend
+    content: str  
 
 
 @router.post("/send")
@@ -27,7 +29,7 @@ def send_message(req: SendMessageRequest):
     if not room:
         raise HTTPException(status_code=404, detail=f"Room {req.room_id} not found")
 
-    if req.user_id not in room["members"]:
+    if req.user_id not in room.get("members", []):
         raise HTTPException(status_code=403, detail="User not in room")
 
     content = req.content.strip()
@@ -38,8 +40,18 @@ def send_message(req: SendMessageRequest):
         message_obj = ChatDatabase.add_message(
             req.room_id,
             req.user_id,
-            content   # FIXED
+            content
         )
+
+        try:
+            user = auth_storage.get_user_by_id(req.user_id)
+            if user:
+                if isinstance(message_obj, dict):
+                    message_obj["user_name"] = user.get("name")
+                else:
+                    message_obj = {"message": message_obj, "user_name": user.get("name")}
+        except Exception:
+            pass
 
         return {"success": True, "message": message_obj}
 
@@ -55,10 +67,37 @@ def get_messages(room_id: str, limit: Optional[int] = 50):
 
     messages = ChatDatabase.get_messages(room_id, limit)
 
+    try:
+        uids = set()
+        for m in messages:
+            uid = None
+            if isinstance(m, dict):
+                uid = m.get("user_id") or m.get("userId") or m.get("user")
+            if uid:
+                uids.add(str(uid))
+
+        user_map: Dict[str, Optional[dict]] = {}
+        for uid in uids:
+            try:
+                user_map[uid] = auth_storage.get_user_by_id(uid)
+            except Exception:
+                user_map[uid] = None
+
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            uid = m.get("user_id") or m.get("userId") or m.get("user")
+            if uid:
+                u = user_map.get(str(uid))
+                if u:
+                    m["user_name"] = u.get("name")
+    except Exception:
+        pass
+
     return {
         "success": True,
         "room_id": room_id,
-        "messages": messages  # must include content + user_id
+        "messages": messages 
     }
 
 
@@ -77,4 +116,3 @@ def clear_messages(room_id: str, user_id: str):
         "success": True,
         "message": f"All messages cleared for room {room_id}."
     }
-   
