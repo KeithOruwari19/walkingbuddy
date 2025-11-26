@@ -160,8 +160,8 @@
 
   function setLoggedInNav(user) {
     if (!navLinks) return;
-    const loginA = navLinks.querySelector('a[href="walkingbuddy/login.html"]');
-    const signupA = navLinks.querySelector('a[href="walkingbuddy/signup.html"]');
+    const loginA = navLinks.querySelector('a[href="login.html"]');
+    const signupA = navLinks.querySelector('a[href="signup.html"]');
 
     try {
       if (loginA) loginA.remove();
@@ -216,7 +216,7 @@
     const user = await verifyRes.json();
     const userId = user.user_id || user.id || user.userId;
     if (!userId) {
-      window.location.href = `${window.location.origin}/walkingbuddy/login.html`;
+      window.location.href = `${window.location.origin}/login.html`;
       return;
     }
     const start_coord = currentRouteData.start_coord && currentRouteData.start_coord.length === 2
