@@ -33,7 +33,6 @@ class ConnectionManager:
             pass
 
     async def broadcast(self, message: dict):
-        """Send a JSON-serializable message to all connected clients."""
         if not self.active_connections:
             return
         text = json.dumps(message)
@@ -66,25 +65,21 @@ async def emit_room_event(event_type: str, room: dict):
     await manager.broadcast(payload)
 
 @router.post("/create")
-def create_room(req: CreateRoomRequest):
-  try:
-    room_id = str(uuid.uuid4())[:8]
-    room = RoomDatabase.create_room(
-      room_id =  room_id,
-      creator_id =  req.user_id,
-      destination = req.destination,
-      start_coord = req.start_coord,
-      dest_coord =  req.dest_coord,
-      max_members = req.max_members
-    )
-    await emit_room_event("room:new", room)
-    return {
-      "success": True, 
-      "room": room, 
-      "message":  f"Room {room_id} created."
-    }
-  except ValueError as e:
-    raise HTTPException(status_code=400, detail=str(e))
+async def create_room(req: CreateRoomRequest):
+    try:
+        room_id = str(uuid.uuid4())[:8]
+        room = RoomDatabase.create_room(
+            room_id=room_id,
+            creator_id=req.user_id,
+            destination=req.destination,
+            start_coord=req.start_coord,
+            dest_coord=req.dest_coord,
+            max_members=req.max_members,
+        )
+        await emit_room_event("room:new", room)
+        return {"success": True, "room": room, "message": f"Room {room_id} created."}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/list")
 def list_rooms():
