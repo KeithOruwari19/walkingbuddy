@@ -56,6 +56,64 @@
   </nav>
 </header>
 
+<script>
+(function () {
+  function parseStoredUser() {
+    try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
+  }
+
+  function getInitials(name, email) {
+    if (name) {
+      const parts = name.trim().split(/\s+/);
+      if (parts.length === 1) return parts[0][0].toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return email ? email[0].toUpperCase() : "?";
+  }
+
+  function colorFromString(str) {
+    if (!str) return "#3949ab";
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 65%, 55%)`;
+  }
+
+  const stored = parseStoredUser();
+  const authLinks = document.getElementById('auth-links');
+  const userInfo = document.getElementById('user-info');
+  const userNameSpan = document.getElementById('user-name');
+  const avatar = document.getElementById('user-avatar');
+
+  if (stored) {
+    // ensure profile is shown and Login/Signup hidden
+    if (authLinks) { authLinks.classList.add('hidden'); authLinks.style.display = 'none'; }
+    if (userInfo) { userInfo.classList.remove('hidden'); userInfo.style.display = 'inline-flex'; }
+
+    if (userNameSpan) userNameSpan.textContent = stored.name || stored.email || 'Hi';
+    if (avatar) {
+      avatar.textContent = getInitials(stored.name, stored.email);
+      avatar.style.backgroundColor = colorFromString(stored.email || stored.name || '');
+    }
+
+    try { window.dispatchEvent(new CustomEvent('auth:update', { detail: stored })); } catch (e) {}
+  } else {
+    if (authLinks) { authLinks.classList.remove('hidden'); authLinks.style.display = 'inline-flex'; }
+    if (userInfo) { userInfo.classList.add('hidden'); userInfo.style.display = 'none'; }
+  }
+
+  document.addEventListener('click', (ev) => {
+    const a = ev.target.closest && ev.target.closest('a[href$="rooms.html"], a[href$="/rooms.html"]');
+    if (!a) return;
+    const s = parseStoredUser();
+    if (!s) {
+      ev.preventDefault();
+      window.location.href = 'login.html';
+    }
+  });
+})();
+</script>
+
 <main class="rooms-container">
 
   <h1 class="section-title">Rooms</h1>
@@ -93,6 +151,7 @@
   </div>
 
 </main>
+
 <script>
 (function(){
   const API_JOIN = '/api/rooms/join';
@@ -223,6 +282,7 @@
   }, { capture: false });
 })();
 </script>
+
 <script type="module" src="/walkingbuddy/modules/rooms.js"></script>
   
 </body>
