@@ -5,167 +5,226 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rooms - Laurier Navigator</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    .msg-box {
+      background:#141726;
+      border-left:3px solid #3949ab;
+      padding:10px 14px;
+      border-radius:6px;
+      margin-bottom:16px;
+      display:none;
+      color:#dfe2ff;
+      font-size:14px;
+    }
+    .msg-box.error {
+      border-color:#c62828;
+      color:#ffd1d1;
+    }
+    .section-subtitle {
+      font-size:16px;
+      color:#bfc2e8;
+      margin-top:30px;
+      margin-bottom:10px;
+      font-weight:600;
+    }
+  </style>
 </head>
 <body>
 
-  <header class="topbar">
-    <div class="logo">WalkingBuddy Rooms</div>
-    <nav class="nav-links">
-      <a href="index.html">Navigation</a>
-      <a href="rooms.html" class="active">Rooms</a>
-    </nav>
-  </header>
+<header class="topbar">
+  <div class="logo">WalkingBuddy Rooms</div>
+  <nav class="nav-links" id="nav-links">
+    <a href="index.html">Navigation</a>
+    <a href="rooms.html" class="active">Rooms</a>
 
-  <main class="rooms-container">
-    <h1 class="section-title">Available Rooms</h1>
+    <span id="auth-links">
+      <a href="login.html">Login</a>
+      <a href="signup.html">Sign Up</a>
+    </span>
 
-    <!-- This will show if no rooms are available -->
-    <div id="no-rooms-message" class="no-rooms-message">
-      <p>No rooms available. Create one!</p>
-    </div>
+    <span id="user-info" style="display:none; align-items:center; gap:10px;">
+      <div id="user-avatar" style="
+        width:32px;height:32px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-size:14px;font-weight:600;color:#fff;
+      "></div>
+      <span id="user-name"></span>
+      <a href="#" id="logout-btn" class="logout-link">Logout</a>
+    </span>
+  </nav>
+</header>
 
-    <!-- List of rooms (dynamically populated) -->
-    <div id="room-list" class="room-list">
-      <!-- Room cards will be added here dynamically -->
-    </div>
+<main class="rooms-container">
 
-    <!-- Button to toggle Create Room Form -->
-    <button id="toggle-create-room-form" class="btn primary-outline">Create New Room</button>
+  <h1 class="section-title">Rooms</h1>
 
-    <!-- Create Room Form (hidden initially) -->
-    <div id="create-room-form" class="create-room-form" style="display:none;">
-      <h2>Create a New Room</h2>
-      <label class="input-label">Room Name</label>
-      <input id="room-name" class="text-input" placeholder="Enter room name" />
+  <div id="message" class="msg-box"></div>
 
-      <label class="input-label">Meet Time</label>
-      <input id="meet-time" class="text-input" type="datetime-local" />
+  <h2 class="section-subtitle">My Joined Rooms</h2>
+  <div id="joined-rooms-list" class="room-list"></div>
 
-      <label class="input-label">Start Location</label>
-      <input id="start-location" class="text-input" placeholder="Start location" />
+  <h2 class="section-subtitle" style="margin-top:40px;">All Available Rooms</h2>
+  <div id="no-rooms-message" class="no-rooms-message">
+    <p>No rooms available. Create one!</p>
+  </div>
 
-      <label class="input-label">Destination</label>
-      <input id="destination" class="text-input" placeholder="Destination" />
+  <div id="room-list" class="room-list"></div>
 
-      <button id="btn-create-room" class="btn primary">Create Room</button>
-    </div>
-  </main>
+  <button id="toggle-create-room-form" class="btn primary-outline">Create New Room</button>
 
-  <script>
-    // Get rooms from localStorage (if any)
-    let rooms = JSON.parse(localStorage.getItem("rooms")) || [];
+  <div id="create-room-form" class="create-room-form" style="display:none;">
+    <h2>Create a New Room</h2>
 
-    // Function to render rooms
-    function renderRooms() {
-      const roomList = document.getElementById("room-list");
-      const noRoomsMessage = document.getElementById("no-rooms-message");
+    <label class="input-label">Room Name</label>
+    <input id="room-name" class="text-input" placeholder="Enter room name" />
 
-      if (rooms.length === 0) {
-        noRoomsMessage.style.display = "block"; // Show "No rooms" message
-      } else {
-        noRoomsMessage.style.display = "none"; // Hide the "no rooms" message
-        roomList.innerHTML = ""; // Clear the list before re-rendering
+    <label class="input-label">Meet Time</label>
+    <input id="meet-time" class="text-input" type="datetime-local" />
 
-        rooms.forEach(room => {
-          const roomCard = document.createElement("div");
-          roomCard.classList.add("room-card");
+    <label class="input-label">Start Location</label>
+    <input id="start-location" class="text-input" placeholder="Start location" />
 
-          roomCard.innerHTML = `
-            <h3 class="room-title">${room.name}</h3>
-            <div class="room-meta">
-              <p><strong>Members:</strong> ${room.members}</p>
-              <p><strong>Meeting Time:</strong> ${new Date(room.meetTime).toLocaleString()}</p>
-              <p><strong>Start Location:</strong> ${room.startLocation}</p>
-              <p><strong>Destination:</strong> ${room.destination}</p>
-            </div>
-            <button class="btn secondary" onclick="joinRoom('${room.name}')">Join Room</button>
-            <button class="btn outline" onclick="deleteRoom('${room.name}')">Delete Room</button>
-          `;
-          
-          roomList.appendChild(roomCard);
-        });
-      }
-    }
+    <label class="input-label">Destination</label>
+    <input id="destination" class="text-input" placeholder="Destination" />
 
-    // Handle room creation and saving to localStorage
-    document.getElementById("btn-create-room").addEventListener("click", function() {
-      const roomName = document.getElementById("room-name").value.trim();
-      const meetTime = document.getElementById("meet-time").value;
-      const startLocation = document.getElementById("start-location").value.trim();
-      const destination = document.getElementById("destination").value.trim();
+    <button id="btn-create-room" class="btn primary">Create Room</button>
+  </div>
 
-      // Form validation
-      if (!roomName || !meetTime || !startLocation || !destination) {
-        alert("Please fill in all fields.");
-        return;
-      }
+</main>
 
-      // Create new room object
-      const newRoom = {
-        name: roomName,
-        meetTime: meetTime,
-        startLocation: startLocation,
-        destination: destination,
-        members: 1, // Start with 1 member (the creator)
-      };
+<script type="module" src="modules/auth.js"></script>
 
-      // Add the new room to rooms array
-      rooms.push(newRoom);
+<script>
+let rooms = JSON.parse(localStorage.getItem("rooms") || "[]");
+let joinedRooms = JSON.parse(localStorage.getItem("joinedRooms") || "[]");
 
-      // Save the updated rooms list to localStorage
-      localStorage.setItem("rooms", JSON.stringify(rooms));
+function showMessage(text, err=false) {
+  const box = document.getElementById("message");
+  box.textContent = text;
+  box.className = err ? "msg-box error" : "msg-box";
+  box.style.display = "block";
+  setTimeout(() => box.style.display = "none", 2500);
+}
 
-      // Reload the rooms list
-      renderRooms();
+function isValidMeetTime(raw) {
+  if (!raw || !raw.includes("-")) return false;
+  const year = raw.split("-")[0];
+  if (!/^\d{4}$/.test(year)) return false;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return false;
+  const y = d.getFullYear();
+  return y >= 2020 && y <= 2100;
+}
 
-      // Hide the form after creating room
-      document.getElementById("create-room-form").style.display = "none";
-    });
+function renderJoinedRooms() {
+  const container = document.getElementById("joined-rooms-list");
+  container.innerHTML = "";
+  if (joinedRooms.length === 0) {
+    container.innerHTML = `<p style="color:#777;font-size:14px;">You haven't joined any rooms yet.</p>`;
+    return;
+  }
+  joinedRooms.forEach(roomName => {
+    const room = rooms.find(r => r.name === roomName);
+    if (!room) return;
+    const div = document.createElement("div");
+    div.classList.add("room-card");
+    div.innerHTML = `
+      <h3 class="room-title">${room.name}</h3>
+      <div class="room-meta">
+        <p><strong>Meeting:</strong> ${new Date(room.meetTime).toLocaleString()}</p>
+      </div>
+      <button class="btn secondary" onclick="enterRoom('${room.name}')">Enter Chat</button>
+    `;
+    container.appendChild(div);
+  });
+}
 
-    // Handle room joining
-    function joinRoom(roomName) {
-      const room = rooms.find(r => r.name === roomName);
-      if (room) {
-        room.members += 1; // Increase member count when joining
+function renderRooms() {
+  const list = document.getElementById("room-list");
+  const empty = document.getElementById("no-rooms-message");
+  if (rooms.length === 0) {
+    empty.style.display = "block";
+    list.innerHTML = "";
+    return;
+  }
+  empty.style.display = "none";
+  list.innerHTML = "";
+  rooms.forEach(room => {
+    const div = document.createElement("div");
+    div.classList.add("room-card");
+    div.innerHTML = `
+      <h3 class="room-title">${room.name}</h3>
+      <div class="room-meta">
+        <p><strong>Members:</strong> ${room.members}</p>
+        <p><strong>Meeting Time:</strong> ${new Date(room.meetTime).toLocaleString()}</p>
+        <p><strong>Start Location:</strong> ${room.startLocation}</p>
+        <p><strong>Destination:</strong> ${room.destination}</p>
+      </div>
+      <button class="btn secondary" onclick="joinRoom('${room.name}')">Join Room</button>
+      <button class="btn outline" onclick="deleteRoom('${room.name}')">Delete Room</button>
+    `;
+    list.appendChild(div);
+  });
+}
 
-        // Save the updated rooms to localStorage
-        localStorage.setItem("rooms", JSON.stringify(rooms));
+document.getElementById("btn-create-room").addEventListener("click", () => {
+  const name = document.getElementById("room-name").value.trim();
+  const meet = document.getElementById("meet-time").value.trim();
+  const start = document.getElementById("start-location").value.trim();
+  const dest = document.getElementById("destination").value.trim();
+  if (!name || !meet || !start || !dest) return showMessage("Fill in all fields.", true);
+  if (!isValidMeetTime(meet)) return showMessage("Invalid date.", true);
 
-        // Save the current room data for the user (can be used in the chat page)
-        localStorage.setItem("currentRoom", JSON.stringify(room));
+  const newRoom = {
+    id: Date.now(),
+    name,
+    meetTime: meet,
+    startLocation: start,
+    destination: dest,
+    members: 1
+  };
+  rooms.push(newRoom);
+  localStorage.setItem("rooms", JSON.stringify(rooms));
+  document.getElementById("create-room-form").style.display = "none";
+  renderJoinedRooms();
+  renderRooms();
+});
 
-        // Redirect to the chat page
-        window.location.href = "chat.html";
-      }
-    }
+function joinRoom(roomName) {
+  const room = rooms.find(r => r.name === roomName);
+  if (!room) return;
+  if (!joinedRooms.includes(roomName)) {
+    joinedRooms.push(roomName);
+    localStorage.setItem("joinedRooms", JSON.stringify(joinedRooms));
+  }
+  localStorage.setItem("currentRoom", JSON.stringify(room));
+  window.location.href = "chat.html";
+}
 
-    // Handle room deletion
-    function deleteRoom(roomName) {
-      const roomIndex = rooms.findIndex(r => r.name === roomName);
-      if (roomIndex > -1) {
-        rooms.splice(roomIndex, 1); // Remove the room from the list
+function enterRoom(roomName) {
+  const room = rooms.find(r => r.name === roomName);
+  if (!room) return;
+  localStorage.setItem("currentRoom", JSON.stringify(room));
+  window.location.href = "chat.html";
+}
 
-        // Update rooms in localStorage
-        localStorage.setItem("rooms", JSON.stringify(rooms));
+function deleteRoom(roomName) {
+  rooms = rooms.filter(r => r.name !== roomName);
+  joinedRooms = joinedRooms.filter(n => n !== roomName);
+  localStorage.setItem("rooms", JSON.stringify(rooms));
+  localStorage.setItem("joinedRooms", JSON.stringify(joinedRooms));
+  renderJoinedRooms();
+  renderRooms();
+}
 
-        // Re-render the rooms list
-        renderRooms();
-      }
-    }
+document.getElementById("toggle-create-room-form").addEventListener("click", () => {
+  const form = document.getElementById("create-room-form");
+  form.style.display = form.style.display === "none" ? "block" : "none";
+});
 
-    // Toggle Create Room Form visibility
-    document.getElementById("toggle-create-room-form").addEventListener("click", function() {
-      const form = document.getElementById("create-room-form");
-      if (form.style.display === "none") {
-        form.style.display = "block"; // Show the form
-      } else {
-        form.style.display = "none"; // Hide the form
-      }
-    });
-
-    // Render rooms on page load
-    renderRooms();
-  </script>
+renderJoinedRooms();
+renderRooms();
+</script>
 
 </body>
 </html>
