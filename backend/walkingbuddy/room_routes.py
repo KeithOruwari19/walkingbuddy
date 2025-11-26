@@ -170,47 +170,76 @@ def list_rooms():
     return {"success": True, "rooms": enriched}
 
 @router.post("/join")
-async def join_room(req: JoinRoomRequest):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+async def join_room(req: JoinRoomRequest, request: Request):
+    # Prefer the session user id; fall back to the body or query param (useful for debugging).
+    user_id = None
     try:
-        room = RoomDatabase.join_room(req.room_id, req.user_id)
+        user_id = request.session.get("user_id")
+    except Exception:
+        user_id = None
+
+    # fallback to provided body or query param if no session (debugging mode)
+    if not user_id:
+        user_id = req.user_id or request.query_params.get("user_id")
+
+    if not user_id:
+        logger.info("[rooms.join] auth failed: no session and no user_id supplied (headers=%s)", dict(request.headers))
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Ensure we pass the resolved user_id to the DB call
+        room = RoomDatabase.join_room(req.room_id, str(user_id))
         attach_creator_name(room)
         attach_canonical_ids(room)
         await emit_room_event("room:join", room)
         return {
             "success": True,
             "room": room,
-            "message": f"User {req.user_id} joined room {req.room_id}.",
+            "message": f"User {user_id} joined room {req.room_id}.",
         }
     except ValueError as e:
-        if "not found" in str(e):
+        if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("[rooms.join] unexpected error joining %s for user %s", req.room_id, user_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.post("/leave")
-async def leave_room(req: LeaveRoomRequest):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-        
+async def leave_room(req: LeaveRoomRequest, request: Request):
+    user_id = None
     try:
-        room = RoomDatabase.leave_room(req.room_id, req.user_id)
+        user_id = request.session.get("user_id")
+    except Exception:
+        user_id = None
+
+    if not user_id:
+        user_id = req.user_id or request.query_params.get("user_id")
+
+    if not user_id:
+        logger.info("[rooms.leave] auth failed: no session and no user_id supplied (headers=%s)", dict(request.headers))
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        room = RoomDatabase.leave_room(req.room_id, str(user_id))
         attach_creator_name(room)
         attach_canonical_ids(room)
         await emit_room_event("room:leave", room)
         return {
             "success": True,
             "room": room,
-            "message": f"User {req.user_id} left room {req.room_id}.",
+            "message": f"User {user_id} left room {req.room_id}.",
         }
     except ValueError as e:
-        if "not found" in str(e):
+        if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("[rooms.leave] unexpected error leaving %s for user %s", req.room_id, user_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
             
 @router.delete("/{room_id}")
 async def delete_room(room_id: str, request: Request, user_id: Optional[str] = None):
