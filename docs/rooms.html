@@ -16,103 +16,36 @@
       color:#dfe2ff;
       font-size:14px;
     }
-    .msg-box.error {
-      border-color:#c62828;
-      color:#ffd1d1;
-    }
+    .msg-box.error { border-color:#c62828; color:#ffd1d1; }
     .section-subtitle {
-      font-size:16px;
-      color:#bfc2e8;
-      margin-top:30px;
-      margin-bottom:10px;
-      font-weight:600;
+      font-size:16px; color:#bfc2e8; margin-top:30px; margin-bottom:10px; font-weight:600;
     }
+
+    #auth-links { display:inline-flex; gap:12px; align-items:center; }
+    #user-info { display:inline-flex; gap:10px; align-items:center; }
+    #user-avatar { width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; color:#fff; }
   </style>
 </head>
-  <script src="./modules/auth.js"></script>
-  <script type="module" src="./modules/app.js"></script>
-<body>
 
+<body>
 <header class="topbar">
   <div class="logo">WalkingBuddy Rooms</div>
   <nav class="nav-links" id="nav-links">
     <a href="index.html">Navigation</a>
-    <a href="rooms.html" class="active">Rooms</a>
+    <a href="rooms.html" id="nav-rooms" class="active">Rooms</a>
 
     <span id="auth-links">
       <a href="login.html">Login</a>
       <a href="signup.html">Sign Up</a>
     </span>
 
-    <span id="user-info" style="display:none; align-items:center; gap:10px;">
-      <div id="user-avatar" style="
-        width:32px;height:32px;border-radius:50%;
-        display:flex;align-items:center;justify-content:center;
-        font-size:14px;font-weight:600;color:#fff;
-      "></div>
+    <span id="user-info" style="display:none;">
+      <div id="user-avatar"></div>
       <span id="user-name"></span>
       <a href="#" id="logout-btn" class="logout-link">Logout</a>
     </span>
   </nav>
 </header>
-
-<script>
-(function () {
-  function parseStoredUser() {
-    try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
-  }
-
-  function getInitials(name, email) {
-    if (name) {
-      const parts = name.trim().split(/\s+/);
-      if (parts.length === 1) return parts[0][0].toUpperCase();
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return email ? email[0].toUpperCase() : "?";
-  }
-
-  function colorFromString(str) {
-    if (!str) return "#3949ab";
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    const hue = Math.abs(hash % 360);
-    return `hsl(${hue}, 65%, 55%)`;
-  }
-
-  const stored = parseStoredUser();
-  const authLinks = document.getElementById('auth-links');
-  const userInfo = document.getElementById('user-info');
-  const userNameSpan = document.getElementById('user-name');
-  const avatar = document.getElementById('user-avatar');
-
-  if (stored) {
-    // ensure profile is shown and Login/Signup hidden
-    if (authLinks) { authLinks.classList.add('hidden'); authLinks.style.display = 'none'; }
-    if (userInfo) { userInfo.classList.remove('hidden'); userInfo.style.display = 'inline-flex'; }
-
-    if (userNameSpan) userNameSpan.textContent = stored.name || stored.email || 'Hi';
-    if (avatar) {
-      avatar.textContent = getInitials(stored.name, stored.email);
-      avatar.style.backgroundColor = colorFromString(stored.email || stored.name || '');
-    }
-
-    try { window.dispatchEvent(new CustomEvent('auth:update', { detail: stored })); } catch (e) {}
-  } else {
-    if (authLinks) { authLinks.classList.remove('hidden'); authLinks.style.display = 'inline-flex'; }
-    if (userInfo) { userInfo.classList.add('hidden'); userInfo.style.display = 'none'; }
-  }
-
-  document.addEventListener('click', (ev) => {
-    const a = ev.target.closest && ev.target.closest('a[href$="rooms.html"], a[href$="/rooms.html"]');
-    if (!a) return;
-    const s = parseStoredUser();
-    if (!s) {
-      ev.preventDefault();
-      window.location.href = 'login.html';
-    }
-  });
-})();
-</script>
 
 <main class="rooms-container">
 
@@ -153,137 +86,117 @@
 </main>
 
 <script>
-(function(){
-  const API_JOIN = '/api/rooms/join';
+(() => {
+  const authLinks = document.getElementById('auth-links');
+  const userInfo = document.getElementById('user-info');
+  const userNameSpan = document.getElementById('user-name');
+  const avatar = document.getElementById('user-avatar');
+  const logoutBtn = document.getElementById('logout-btn');
+  const roomsNav = document.getElementById('nav-rooms');
 
-  function getUserId() {
-    try {
-      const u = JSON.parse(localStorage.getItem('user') || 'null');
-      return u?.id || u?.user_id || u?.email || u?.name || `guest-${Math.floor(Math.random()*100000)}`;
-    } catch { return `guest-${Math.floor(Math.random()*100000)}`; }
+  function getStoredUser() {
+    try { return JSON.parse(localStorage.getItem('user') || 'null'); }
+    catch { return null; }
   }
 
-  function extractRoomFromCard(cardEl) {
-    if (!cardEl) return null;
-    const title = cardEl.querySelector('.room-title')?.textContent?.trim() || '';
-    const membersText = cardEl.querySelector('.room-meta p strong')?.parentElement?.textContent || '';
-    const meetP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /meeting|meet/i.test(p.textContent));
-    const startP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /start/i.test(p.textContent));
-    const destP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /destination/i.test(p.textContent));
-    return {
-      id: cardEl.dataset.roomId || cardEl.dataset.id || title,
-      name: title,
-      members: parseInt((membersText.match(/\d+/)||['0'])[0],10) || 0,
-      meetTime: meetP ? meetP.textContent.replace(/Meeting:|Meeting Time:/i,'').trim() : null,
-      startLocation: startP ? startP.textContent.replace(/Start Location:/i,'').trim() : '',
-      destination: destP ? destP.textContent.replace(/Destination:/i,'').trim() : ''
-    };
-  }
-
-  async function serverJoin(roomIdOrName) {
-    const payload = { room_id: roomIdOrName, user_id: getUserId() };
-    try {
-      const res = await fetch(API_JOIN, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const text = await res.text();
-      let j = null;
-      try { j = JSON.parse(text); } catch {}
-      if (!res.ok) {
-        console.warn('join failed', res.status, text);
-        return j?.room || null;
-      }
-      return j?.room || j || null;
-    } catch (e) {
-      console.warn('join network failed', e);
-      return null;
+  function initials(name, email){
+    if(name){
+      const parts = name.trim().split(/\s+/);
+      if(parts.length === 1) return parts[0][0].toUpperCase();
+      return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
     }
+    return (email || '?')[0].toUpperCase();
   }
 
-  async function doJoinAndEnter(cardEl, navigate = false) {
-    const room = extractRoomFromCard(cardEl);
-    if (!room) { console.warn('no room element'); return; }
+  function colorFromString(str){
+    if(!str) return '#3949ab';
+    let hash=0;
+    for(let i=0;i<str.length;i++) hash = str.charCodeAt(i) + ((hash<<5)-hash);
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue},65%,55%)`;
+  }
 
-    let serverRoom = null;
-    if (room.id) {
-      serverRoom = await serverJoin(room.id);
+  function showProfile(user){
+    if(authLinks){ authLinks.style.display = 'none'; authLinks.classList.add('hidden'); }
+    if(userInfo){ userInfo.style.display = 'inline-flex'; userInfo.classList.remove('hidden'); }
+    if(userNameSpan) userNameSpan.textContent = user.name || user.email || 'Hi';
+    if(avatar){ avatar.textContent = initials(user.name, user.email); avatar.style.backgroundColor = colorFromString(user.email || user.name || ''); }
+  }
+  function showAnon(){
+    if(authLinks){ authLinks.style.display = 'inline-flex'; authLinks.classList.remove('hidden'); }
+    if(userInfo){ userInfo.style.display = 'none'; userInfo.classList.add('hidden'); }
+    if(avatar) avatar.textContent = '';
+    if(userNameSpan) userNameSpan.textContent = '';
+  }
+
+  window.addEventListener('auth:update', (e) => {
+    const u = e && e.detail ? e.detail : getStoredUser();
+    if (u) showProfile(u); else showAnon();
+  });
+
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'user') {
+      try {
+        const v = e.newValue ? JSON.parse(e.newValue) : null;
+        if (v) showProfile(v); else showAnon();
+      } catch { showAnon(); }
     }
+  });
 
-    const toStore = serverRoom || room;
-    try { localStorage.setItem('currentRoom', JSON.stringify(toStore)); } catch (e) { console.warn('store failed', e); }
+  document.addEventListener('DOMContentLoaded', () => {
+    const cached = getStoredUser();
+    if (cached) showProfile(cached);
+    else {
+      showAnon();
+    }
+  });
 
+  if (logoutBtn) logoutBtn.addEventListener('click', async (ev) => {
+    ev.preventDefault();
     try {
-      const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
-      if (!joined.includes(toStore.id || toStore.name)) {
-        joined.push(toStore.id || toStore.name);
-        localStorage.setItem('joinedRooms', JSON.stringify(joined));
-      }
-    } catch (e) {}
-
-    if (navigate) window.location.href = 'chat.html';
-  }
-
-  document.addEventListener('click', async (ev) => {
-    const t = ev.target;
-
-    const joinId = t?.dataset?.join;
-    const enterId = t?.dataset?.enter;
-    if (joinId) {
+      await fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(()=>{});
+    } catch {}
+    try { localStorage.removeItem('user'); } catch {}
+    window.dispatchEvent(new CustomEvent('auth:update', { detail: null }));
+  });
+  
+  if (roomsNav) roomsNav.addEventListener('click', (ev) => {
+    const u = getStoredUser();
+    if (!u) {
       ev.preventDefault();
-      const card = t.closest('.room-card') || document.querySelector(`.room-card[data-room-id="${joinId}"]`);
-      await doJoinAndEnter(card, true);
-      return;
+      window.location.href = 'login.html';
     }
-    if (enterId) {
-      ev.preventDefault();
-      const card = t.closest('.room-card') || document.querySelector(`.room-card[data-room-id="${enterId}"]`);
-      const room = extractRoomFromCard(card);
-      if (room) {
-        localStorage.setItem('currentRoom', JSON.stringify(room));
-        const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
-        if (!joined.includes(room.id || room.name)) {
-          joined.push(room.id || room.name);
-          localStorage.setItem('joinedRooms', JSON.stringify(joined));
-        }
-      }
-      window.location.href = 'chat.html';
-      return;
-    }
+  });
+})();
+</script>
 
-    if (t.tagName === 'BUTTON' || t.tagName === 'A') {
-      const onclick = t.getAttribute && t.getAttribute('onclick');
-      if (onclick && /joinRoom\(['"](.+?)['"]\)/.test(onclick)) {
-        ev.preventDefault();
-        const name = onclick.match(/joinRoom\(['"](.+?)['"]\)/)[1];
-        const card = Array.from(document.querySelectorAll('.room-card')).find(c => (c.querySelector('.room-title')?.textContent||'').trim() === name);
-        await doJoinAndEnter(card, true);
-        return;
-      }
-      if (onclick && /enterRoom\(['"](.+?)['"]\)/.test(onclick)) {
-        ev.preventDefault();
-        const name = onclick.match(/enterRoom\(['"](.+?)['"]\)/)[1];
-        const card = Array.from(document.querySelectorAll('.room-card')).find(c => (c.querySelector('.room-title')?.textContent||'').trim() === name);
-        if (card) {
-          const room = extractRoomFromCard(card);
-          localStorage.setItem('currentRoom', JSON.stringify(room));
-          const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
-          if (!joined.includes(room.id || room.name)) {
-            joined.push(room.id || room.name);
-            localStorage.setItem('joinedRooms', JSON.stringify(joined));
-          }
-        }
-        window.location.href = 'chat.html';
-        return;
-      }
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const start = params.get('start');
+  const dest = params.get('dest');
+
+  if (!start && !dest) return;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('create-room-form');
+    const startInput = document.getElementById('start-location');
+    const destInput = document.getElementById('destination');
+    const roomName = document.getElementById('room-name');
+
+    if (form) form.style.display = 'block';
+    if (startInput && start) startInput.value = start;
+    if (destInput && dest) destInput.value = dest;
+    if (roomName && dest) {
+      try { roomName.value = `Walk to ${dest.split(',')[0].trim()}`; } catch {}
     }
-  }, { capture: false });
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
 })();
 </script>
 
 <script type="module" src="/walkingbuddy/modules/rooms.js"></script>
-  
+
 </body>
 </html>
+
