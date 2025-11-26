@@ -251,7 +251,6 @@
     const data = await res.json().catch(()=>({}));
 
     if (res.ok && data.success) {
-      // backend returns room in data.room
       const roomObj = data.room || {};
       const roomId = roomObj.id || roomObj.room_id || roomObj.roomId || roomObj['room_id'];
       const roomUrl = data.room_url || roomObj.url || roomObj.room_url;
@@ -266,7 +265,6 @@
         return;
       }
     } else {
-      // show error returned by server or fallback message
       const detail = data.detail || data.message || data.error || JSON.stringify(data) || res.statusText;
       showRouteInfo(`Failed to create room: ${detail}`);
     }
@@ -280,7 +278,16 @@
     }
   }
 }
-
+  
+document.addEventListener('DOMContentLoaded', () => {
+  navLinks = document.querySelector('.nav-links');
+  if (typeof removeAuthLinks === 'function') {
+    removeAuthLinks();
+  }
+  if (typeof checkSessionAndUpdateNav === 'function') {
+    checkSessionAndUpdateNav();
+  }
+});
   window.addEventListener('load', () => {
     btnGetRoute = document.getElementById('btn-get-route');
     btnUseLocation = document.getElementById('btn-use-location');
