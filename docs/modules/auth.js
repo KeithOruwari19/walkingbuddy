@@ -74,6 +74,8 @@
   function renderLoggedOut() {
     console.log("auth: renderLoggedOut");
     showAuthLinks();
+    if (userNameSpan) userNameSpan.textContent = "";
+    if (avatar) { avatar.textContent = ""; avatar.style.backgroundColor = ""; }
     if (logoutBtn) logoutBtn.onclick = null;
   }
 
@@ -104,18 +106,21 @@
   }
 
   async function handleAuthUpdate(evt) {
-    if (evt && evt.detail) {
-      if (evt.detail) {
-        renderLoggedIn(evt.detail);
-        return;
+    if (evt && Object.prototype.hasOwnProperty.call(evt, "detail")) {
+      const d = evt.detail; 
+      if (d) {
+        try { localStorage.setItem("user", JSON.stringify(d)); } catch (e) { }
+        renderLoggedIn(d);
       } else {
+        try { localStorage.removeItem("user"); } catch (e) {}
         renderLoggedOut();
-        return;
       }
+      return;
     }
 
     const serverUser = await tryVerify();
     if (serverUser) {
+      try { localStorage.setItem("user", JSON.stringify(serverUser)); } catch (e) { }
       renderLoggedIn(serverUser);
       return;
     }
