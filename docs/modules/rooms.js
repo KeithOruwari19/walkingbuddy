@@ -10,30 +10,6 @@ let joinedRooms = [];
 let ws = null;
 const $ = sel => document.querySelector(sel);
 
-function normalizeId(id) {
-  if (id === null || id === undefined) return null;
-  return String(id);
-}
-
-function dedupeJoinedRooms() {
-  joinedRooms = Array.from(new Set((joinedRooms || []).map(normalizeId).filter(x => x !== null)));
-}
-
-function dedupeRooms() {
-  const seen = new Set();
-  const out = [];
-  for (const r of rooms || []) {
-    const id = normalizeId(r && r.id);
-    if (!id) continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    // ensure stored id is string on the room object
-    r.id = id;
-    out.push(r);
-  }
-  rooms = out;
-}
-
 function getStoredUser() {
   try {
     const raw = localStorage.getItem("user");
@@ -55,7 +31,7 @@ function getCurrentUserName() {
   return u.name || u.full_name || u.displayName || u.email || null;
 }
 
-function escapeHtml(s){ return String(s || "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function normalizeRoom(r) {
   r = r || {};
@@ -78,13 +54,13 @@ function normalizeRoom(r) {
     null;
 
   return {
-    id: normalizeId(r.room_id || r.id || r.uuid || r.roomId || (r.id || r.room_id ? String(r.id || r.room_id) : Date.now())),
+    id: r.room_id || r.id || r.uuid || r.roomId || String(r.id || r.room_id || Date.now()),
     name: r.name || r.room_name || r.destination || r.title || `Room ${r.room_id || r.id || ''}`,
     members: Array.isArray(r.members) ? r.members.length : (r.members ?? (Array.isArray(r.users) ? r.users.length : (r.count ?? 0))),
     meetTime: meet,
     startLocation: r.startLocation || r.start_location || r.start || r.startAddr || '',
     destination: r.destination || r.dest || r.to || '',
-    creatorId: creatorId ? normalizeId(creatorId) : null,
+    creatorId: creatorId,
     creatorName: creatorName,
     raw: r
   };
@@ -107,10 +83,9 @@ function renderJoinedRooms() {
     container.innerHTML = `<p style="color:#777;font-size:14px;">You haven't joined any rooms yet.</p>`;
     return;
   }
-  const currentUserId = normalizeId(getCurrentUserId());
+  const currentUserId = getCurrentUserId();
   joinedRooms.forEach(roomId => {
-    const id = normalizeId(roomId);
-    const room = rooms.find(r => normalizeId(r.id) === id || normalizeId(r.name) === id);
+    const room = rooms.find(r => (r.id === roomId || r.name === roomId));
     if (!room) return;
     const div = document.createElement("div");
     div.classList.add("room-card");
@@ -121,11 +96,8 @@ function renderJoinedRooms() {
         <p><strong>Meeting:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
         <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
       </div>
-      <div class="room-actions">
-        <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
-        <button class="btn danger" data-leave="${room.id}">Leave Room</button>
-        ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
-      </div>
+      <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
+      ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
     `;
     container.appendChild(div);
   });
@@ -142,13 +114,12 @@ function renderRooms() {
   }
   if (empty) empty.style.display = "none";
   list.innerHTML = "";
-  const currentUserId = normalizeId(getCurrentUserId());
+  const currentUserId = getCurrentUserId();
   rooms.forEach(room => {
     const div = document.createElement("div");
     div.classList.add("room-card");
     div.dataset.roomId = room.id;
     const isCreator = room.creatorId && currentUserId && String(room.creatorId) === String(currentUserId);
-    const isJoined = joinedRooms.map(normalizeId).includes(normalizeId(room.id));
     div.innerHTML = `
       <h3 class="room-title">${escapeHtml(room.name)}</h3>
       <div class="room-meta">
@@ -159,7 +130,7 @@ function renderRooms() {
         <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
       </div>
       <div class="room-actions">
-        ${isJoined ? `<button class="btn secondary" data-enter="${room.id}">Enter Chat</button> <button class="btn danger" data-leave="${room.id}">Leave Room</button>` : `<button class="btn secondary" data-join="${room.id}">Join Room</button>`}
+        <button class="btn secondary" data-join="${room.id}">Join Room</button>
         ${isCreator ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
       </div>
     `;
@@ -171,13 +142,9 @@ function loadLocalBackup() {
   try {
     rooms = JSON.parse(localStorage.getItem("rooms") || "[]").map(normalizeRoom);
     joinedRooms = JSON.parse(localStorage.getItem("joinedRooms") || "[]");
-    if (!Array.isArray(joinedRooms)) joinedRooms = [];
   } catch (e) {
     rooms = []; joinedRooms = [];
   }
-  joinedRooms = (joinedRooms || []).map(normalizeId).filter(x => x !== null);
-  dedupeJoinedRooms();
-  dedupeRooms();
   renderJoinedRooms();
   renderRooms();
 }
@@ -185,7 +152,7 @@ function loadLocalBackup() {
 function saveLocalBackup() {
   try {
     localStorage.setItem("rooms", JSON.stringify(rooms.map(r=>r.raw || r)));
-    localStorage.setItem("joinedRooms", JSON.stringify((joinedRooms || []).map(normalizeId)));
+    localStorage.setItem("joinedRooms", JSON.stringify(joinedRooms));
   } catch (e) {}
 }
 
@@ -308,7 +275,7 @@ async function fetchRoomsFromServer() {
     const j = await res.json();
     const serverRooms = Array.isArray(j.rooms) ? j.rooms.map(normalizeRoom) : [];
 
-    const userId = normalizeId(getCurrentUserId());
+    const userId = getCurrentUserId();
     const userName = getCurrentUserName();
     serverRooms.forEach(r => {
       if ((!r.creatorName || r.creatorName === null) && r.creatorId && userId && String(r.creatorId) === String(userId)) {
@@ -319,7 +286,6 @@ async function fetchRoomsFromServer() {
     await resolveNamesForRooms(serverRooms);
 
     rooms = serverRooms;
-    dedupeRooms();
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -351,15 +317,14 @@ async function createRoomOnServer(roomPayload) {
     const j = await res.json();
     const created = normalizeRoom(j.room || j);
 
-    const uid = normalizeId(getCurrentUserId());
+    const uid = getCurrentUserId();
     if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
       created.creatorName = getCurrentUserName();
     }
 
     await resolveNamesForRooms([created]);
 
-    if (!rooms.find(r => normalizeId(r.id) === normalizeId(created.id))) rooms.unshift(created);
-    dedupeRooms();
+    if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -377,8 +342,7 @@ async function createRoomOnServer(roomPayload) {
       creatorId: getCurrentUserId(),
       creatorName: getCurrentUserName()
     });
-    if (!rooms.find(r => normalizeId(r.id) === normalizeId(created.id))) rooms.unshift(created);
-    dedupeRooms();
+    rooms.unshift(created);
     saveLocalBackup();
     renderRooms();
     return created;
@@ -402,14 +366,8 @@ async function joinRoomOnServer(roomId, userId) {
 
     await resolveNamesForRooms([updated]);
 
-    rooms = rooms.map(r => normalizeId(r.id) === normalizeId(updated.id) ? updated : r);
-    if (!rooms.find(r => normalizeId(r.id) === normalizeId(updated.id))) rooms.unshift(updated);
-
-    const sid = normalizeId(updated.id);
-    if (!joinedRooms.map(normalizeId).includes(sid)) joinedRooms.push(sid);
-
-    dedupeJoinedRooms();
-    dedupeRooms();
+    rooms = rooms.map(r => r.id === updated.id ? updated : r);
+    if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -417,9 +375,7 @@ async function joinRoomOnServer(roomId, userId) {
     return updated;
   } catch (e) {
     showMessage("Failed to join on server, falling back to local.", true);
-    const sid = normalizeId(roomId);
-    if (!joinedRooms.map(normalizeId).includes(sid)) joinedRooms.push(sid);
-    dedupeJoinedRooms();
+    if (!joinedRooms.includes(roomId)) joinedRooms.push(roomId);
     saveLocalBackup();
     renderJoinedRooms();
     return null;
@@ -427,7 +383,7 @@ async function joinRoomOnServer(roomId, userId) {
 }
 
 async function deleteRoomOnServer(roomId) {
-  const existingRoom = rooms.find(r => normalizeId(r.id) === normalizeId(roomId));
+  const existingRoom = rooms.find(r => r.id === roomId);
   try {
     const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, {
       method: 'DELETE',
@@ -445,10 +401,8 @@ async function deleteRoomOnServer(roomId) {
       return false;
     }
 
-    rooms = rooms.filter(r => normalizeId(r.id) !== normalizeId(roomId));
-    joinedRooms = joinedRooms.filter(n => normalizeId(n) !== normalizeId(roomId));
-    dedupeRooms();
-    dedupeJoinedRooms();
+    rooms = rooms.filter(r => r.id !== roomId);
+    joinedRooms = joinedRooms.filter(n => n !== roomId && n !== String(roomId));
     saveLocalBackup();
     renderRooms();
     renderJoinedRooms();
@@ -456,52 +410,6 @@ async function deleteRoomOnServer(roomId) {
   } catch (e) {
     showMessage('Network error while deleting room', true);
     console.warn('delete exception', e);
-    return false;
-  }
-}
-
-// leaveRoomOnServer (keep same behaviour as before)
-async function leaveRoomOnServer(roomId, userId) {
-  try {
-    const res = await fetch(`${API_BASE}/leave`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_id: roomId, user_id: userId })
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || "leave failed");
-    }
-
-    const j = await res.json();
-    const possibleRoom = (j && j.room) ? j.room : (j && j.updatedRoom) ? j.updatedRoom : (j && j.room_obj) ? j.room_obj : j;
-    const updated = normalizeRoom(possibleRoom || {});
-
-    if (updated && updated.id) {
-      const idx = rooms.findIndex(r => normalizeId(r.id) === normalizeId(updated.id));
-      if (idx >= 0) rooms[idx] = updated;
-      else rooms.unshift(updated);
-    }
-
-    joinedRooms = joinedRooms.filter(id => normalizeId(id) !== normalizeId(roomId));
-    dedupeJoinedRooms();
-    dedupeRooms();
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-
-    try { const cur = JSON.parse(localStorage.getItem('currentRoom') || 'null'); if (cur && (normalizeId(cur.id) === normalizeId(roomId) || normalizeId(cur.room_id) === normalizeId(roomId))) localStorage.removeItem('currentRoom'); } catch(e){}
-
-    return true;
-  } catch (e) {
-    showMessage('Failed to leave room on server; removed locally.', true);
-    joinedRooms = joinedRooms.filter(id => normalizeId(id) !== normalizeId(roomId));
-    dedupeJoinedRooms();
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-    try { const cur = JSON.parse(localStorage.getItem('currentRoom') || 'null'); if (cur && (normalizeId(cur.id) === normalizeId(roomId) || normalizeId(cur.room_id) === normalizeId(roomId))) localStorage.removeItem('currentRoom'); } catch(e){}
     return false;
   }
 }
@@ -526,31 +434,28 @@ function connectRoomsSocket() {
         if ((!r.creatorName || r.creatorName === null) && r.creatorId && getCurrentUserId() && String(r.creatorId) === String(getCurrentUserId())) {
           r.creatorName = getCurrentUserName();
         }
-        if (!rooms.find(x => normalizeId(x.id) === normalizeId(r.id))) rooms.unshift(r);
+        if (!rooms.find(x => x.id === r.id)) rooms.unshift(r);
         resolveNamesForRooms([r]).then(() => {
-          dedupeRooms();
           saveLocalBackup();
           renderRooms();
-        }).catch(() => { dedupeRooms(); saveLocalBackup(); renderRooms(); });
+        }).catch(() => { saveLocalBackup(); renderRooms(); });
       } else if (data.type === "room:delete") {
-        const deletedId = normalizeId((data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room);
-        rooms = rooms.filter(x => normalizeId(x.id) !== deletedId);
-        joinedRooms = joinedRooms.filter(n => normalizeId(n) !== deletedId);
-        dedupeRooms();
-        dedupeJoinedRooms();
+        const deletedId = (data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room;
+        rooms = rooms.filter(x => x.id !== deletedId);
+        joinedRooms = joinedRooms.filter(n => n !== deletedId && n !== String(deletedId));
         saveLocalBackup();
         renderRooms();
         renderJoinedRooms();
       } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
-        const idx = rooms.findIndex(x => normalizeId(x.id) === normalizeId(r.id));
+        // update or insert
+        const idx = rooms.findIndex(x => x.id === r.id);
         if (idx >= 0) rooms[idx] = r; else rooms.unshift(r);
         resolveNamesForRooms([r]).then(() => {
-          dedupeRooms();
           saveLocalBackup();
           renderRooms();
           renderJoinedRooms();
-        }).catch(() => { dedupeRooms(); saveLocalBackup(); renderRooms(); renderJoinedRooms(); });
+        }).catch(() => { saveLocalBackup(); renderRooms(); renderJoinedRooms(); });
       }
     } catch (err) {
       console.warn("invalid rooms socket message", err);
@@ -595,10 +500,21 @@ function wireUI() {
   });
 
   document.addEventListener("click", async (ev) => {
-    const joinId = ev.target?.dataset?.join;
-    const enterId = ev.target?.dataset?.enter;
-    const deleteId = ev.target?.dataset?.delete;
-    const leaveId = ev.target?.dataset?.leave;
+    const actionable = ev.target.closest
+      ? ev.target.closest('button[data-join], button[data-enter], button[data-leave], button[data-delete], [data-join], [data-enter], [data-leave], [data-delete]')
+      : ev.target;
+
+    if (!actionable) return;
+
+    const joinId = actionable.dataset?.join;
+    const enterId = actionable.dataset?.enter;
+    const deleteId = actionable.dataset?.delete;
+    const leaveId = actionable.dataset?.leave;
+
+    if (enterId || joinId || leaveId || deleteId) {
+      console.log('rooms UI click ->', { joinId, enterId, leaveId, deleteId, clicked: actionable.tagName, target: ev.target });
+    }
+
     if (joinId) {
       ev.preventDefault();
       await joinRoomOnServer(joinId, getCurrentUserId());
@@ -606,23 +522,20 @@ function wireUI() {
     }
     if (enterId) {
       ev.preventDefault();
-      const room = rooms.find(r => normalizeId(r.id) === normalizeId(enterId));
+      const room = rooms.find(r => r.id === enterId);
       if (room) {
-        localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
-        const sid = normalizeId(room.id);
-        if (!joinedRooms.map(normalizeId).includes(sid)) {
-          joinedRooms.push(sid);
-          dedupeJoinedRooms();
+        try { localStorage.setItem("currentRoom", JSON.stringify(room.raw || room)); } catch {}
+        if (!joinedRooms.includes(room.id)) {
+          joinedRooms.push(room.id);
           saveLocalBackup();
         }
-        window.location.href = "chat.html";
+        setTimeout(() => { window.location.href = "chat.html"; }, 10);
       }
       return;
     }
     if (leaveId) {
       ev.preventDefault();
-      joinedRooms = joinedRooms.filter(n => normalizeId(n) !== normalizeId(leaveId));
-      dedupeJoinedRooms();
+      joinedRooms = joinedRooms.filter(n => n !== leaveId && n !== String(leaveId));
       saveLocalBackup();
       renderJoinedRooms();
       renderRooms();
@@ -632,11 +545,9 @@ function wireUI() {
     }
     if (deleteId) {
       ev.preventDefault();
-      const existing = rooms.find(r => normalizeId(r.id) === normalizeId(deleteId));
-      rooms = rooms.filter(r => normalizeId(r.id) !== normalizeId(deleteId));
-      joinedRooms = joinedRooms.filter(n => normalizeId(n) !== normalizeId(deleteId));
-      dedupeRooms();
-      dedupeJoinedRooms();
+      const existing = rooms.find(r => r.id === deleteId);
+      rooms = rooms.filter(r => r.id !== deleteId);
+      joinedRooms = joinedRooms.filter(n => n !== deleteId);
       saveLocalBackup();
       renderRooms();
       renderJoinedRooms();
