@@ -357,15 +357,22 @@ async function joinRoomOnServer(roomId, userId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ room_id: roomId, user_id: userId })
     });
+
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || "join failed");
+      let bodyText = "";
+      try { bodyText = await res.text(); } catch (e) { bodyText = "<failed to read body>"; }
+      console.warn(`joinRoomOnServer: server responded ${res.status} ${res.statusText} — ${bodyText}`);
+      throw new Error(`Join failed: ${res.status} ${res.statusText} - ${bodyText}`);
     }
-    const j = await res.json();
+
+    let j;
+    try { j = await res.json(); } catch (err) {
+      console.warn("joinRoomOnServer: response was not JSON, using empty room fallback", err);
+      j = {};
+    }
+
     const updated = normalizeRoom(j.room || j);
-
     await resolveNamesForRooms([updated]);
-
     rooms = rooms.map(r => r.id === updated.id ? updated : r);
     if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
     saveLocalBackup();
@@ -374,6 +381,7 @@ async function joinRoomOnServer(roomId, userId) {
     try { localStorage.setItem("currentRoom", JSON.stringify(j.room || j)); } catch {}
     return updated;
   } catch (e) {
+    console.warn("joinRoomOnServer: exception", e);
     showMessage("Failed to join on server, falling back to local.", true);
     if (!joinedRooms.includes(roomId)) joinedRooms.push(roomId);
     saveLocalBackup();
