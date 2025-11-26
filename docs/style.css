@@ -329,4 +329,9 @@ body {
   background: #3949ab;
   color: #fff;
 }
-
+.nav-links .wb-auth-greeting + a[href*="login.html"],
+.nav-links .wb-auth-greeting + a[href*="signup.html"],
+.nav-links a[href*="login.html"],
+.nav-links a[href*="signup.html"] {
+  display: none !important;
+}
