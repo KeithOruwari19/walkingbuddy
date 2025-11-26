@@ -258,26 +258,43 @@ async function joinRoomOnServer(roomId, userId) {
 }
 
 async function deleteRoomOnServer(roomId) {
+  const existingRoom = rooms.find(r => r.id === roomId);
   try {
     const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, {
       method: 'DELETE',
       credentials: 'include'
     });
+
+    const text = await res.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch(e) { body = text; }
+
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || 'delete failed');
+      if (existingRoom && !rooms.find(r => r.id === existingRoom.id)) rooms.unshift(existingRoom);
+      if (existingRoom && !joinedRooms.includes(existingRoom.id)) {
+      }
+      saveLocalBackup();
+      renderRooms();
+      renderJoinedRooms();
+
+      const errMsg = (body && body.detail) || (body && body.message) || (typeof body === 'string' ? body : `HTTP ${res.status}`);
+      showMessage(`Failed to delete room: ${errMsg}`, true);
+      console.warn('delete failed', res.status, body);
+      return false;
     }
-    rooms = rooms.filter(r => r.id !== roomId);
-    joinedRooms = joinedRooms.filter(n => n !== roomId && n !== String(roomId));
+    console.log('delete success', body);
+    return true;
+  } catch (e) {
+    if (existingRoom && !rooms.find(r => r.id === existingRoom.id)) rooms.unshift(existingRoom);
     saveLocalBackup();
     renderRooms();
     renderJoinedRooms();
-    return true;
-  } catch (e) {
-    console.warn('deleteRoomOnServer failed', e);
+    showMessage('Network error while deleting room', true);
+    console.warn('delete exception', e);
     return false;
   }
 }
+
 
 function connectRoomsSocket() {
   const url = WS_URL;
