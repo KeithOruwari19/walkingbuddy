@@ -11,7 +11,7 @@ This file handles all the room-related operations which include:
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import uuid
 import asyncio
 import json
@@ -49,6 +49,12 @@ class CreateRoomRequest(BaseModel):
     start_coord: List[float]
     dest_coord: List[float]
     max_members: int = 10
+    room_name: Optional[str] = None
+    name: Optional[str] = None
+    meet_time: Optional[str] = None
+    meetTime: Optional[str] = None
+    start_location: Optional[str] = None
+    startLocation: Optional[str] = None
 
 class JoinRoomRequest(BaseModel):
     user_id: str
