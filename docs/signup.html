@@ -6,43 +6,66 @@
   <title>Sign Up - Laurier Navigator</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    .auth-msg { display: none; margin-top: 10px; padding: 8px; border-radius: 6px; }
-    .auth-msg.error { background: #ffd6d6; color: #800; }
-    .auth-msg.success { background: #e6ffea; color: #064; }
+    .auth-msg { display:none;margin-top:10px;padding:8px;border-radius:6px; }
+    .auth-msg.error { background:#ffd6d6;color:#800; }
+    .auth-msg.success { background:#e6ffea;color:#064; }
   </style>
 </head>
 <body>
 
-  <div class="auth-wrapper">
-    <div class="auth-card">
+<header class="topbar">
+  <div class="logo">Laurier Navigator</div>
+  <nav class="nav-links" id="nav-links">
+    <a href="index.html">Navigation</a>
+    <a href="rooms.html">Rooms</a>
 
-      <h1 class="auth-title">Create Account</h1>
+    <span id="auth-links">
+      <a href="login.html">Login</a>
+      <a href="signup.html">Sign Up</a>
+    </span>
 
-      <form id="signupForm" autocomplete="off" novalidate>
-        <label class="input-label">Full Name</label>
-        <input id="name" type="text" class="text-input auth-input" placeholder="Your name" />
+    <span id="user-info" style="display:none; align-items:center; gap:10px;">
+      <div id="user-avatar" style="
+        width:32px;height:32px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-size:14px;font-weight:600;color:#fff;
+      "></div>
+      <span id="user-name"></span>
+      <a href="#" id="logout-btn" class="logout-link">Logout</a>
+    </span>
+  </nav>
+</header>
 
-        <label class="input-label">MyLaurier Email</label>
-        <input id="email" type="email" class="text-input auth-input" placeholder="you@mylaurier.ca" />
+<div class="auth-wrapper">
+  <div class="auth-card">
 
-        <label class="input-label">Password</label>
-        <input id="password" type="password" class="text-input auth-input" placeholder="Create password" />
+    <h1 class="auth-title">Create Account</h1>
 
-        <label class="input-label">Profile Picture (Optional)</label>
-        <input id="avatar" type="file" class="file-input" accept="image/*" />
+    <form id="signupForm" autocomplete="off" novalidate>
+      <label class="input-label">Full Name</label>
+      <input id="name" type="text" class="text-input auth-input" />
 
-        <button id="signupBtn" class="btn primary auth-btn" type="submit">Sign Up</button>
+      <label class="input-label">MyLaurier Email</label>
+      <input id="email" type="email" class="text-input auth-input" />
 
-        <p class="auth-footer">
-          Already have an account? <a href="login.html" class="auth-link">Login</a>
-        </p>
-        
-        <div id="msgSuccess" class="auth-msg success" role="status" aria-live="polite"></div>
-        <div id="msgError" class="auth-msg error" role="alert" aria-live="assertive"></div>
-      </form>
+      <label class="input-label">Password</label>
+      <input id="password" type="password" class="text-input auth-input" />
 
-    </div>
+      <button id="signupBtn" class="btn primary auth-btn" type="submit">Sign Up</button>
+
+      <p class="auth-footer">
+        Already have an account? <a href="login.html" class="auth-link">Login</a>
+      </p>
+
+      <div id="msgSuccess" class="auth-msg success"></div>
+      <div id="msgError" class="auth-msg error"></div>
+    </form>
+
   </div>
+</div>
+
+<script type="module" src="modules/auth.js"></script>
+
 <script>
 (() => {
   const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
@@ -52,73 +75,52 @@
   const msgSuccess = document.getElementById('msgSuccess');
   const msgError = document.getElementById('msgError');
 
-  function showSuccess(text) {
-    msgError.style.display = 'none';
-    msgSuccess.textContent = text;
-    msgSuccess.style.display = 'block';
-  }
-  function showError(text) {
-    msgSuccess.style.display = 'none';
-    msgError.textContent = text;
-    msgError.style.display = 'block';
-  }
+  function showSuccess(t){msgError.style.display='none';msgSuccess.textContent=t;msgSuccess.style.display='block';}
+  function showError(t){msgSuccess.style.display='none';msgError.textContent=t;msgError.style.display='block';}
 
-  if (!form || !btn) {
-    console.error("Signup elements missing");
-    return;
-  }
-  
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async e => {
     e.preventDefault();
-    msgError.style.display = 'none';
-    msgSuccess.style.display = 'none';
+    msgError.style.display='none';msgSuccess.style.display='none';
 
     const name = document.getElementById('name').value.trim();
     const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
+    const password = document.getElementById('password').value.trim();
 
-    if (!name) return showError('Please enter your full name.');
-    if (!email || !email.toLowerCase().endsWith('@mylaurier.ca')) return showError('Please use a valid @mylaurier.ca email.');
-    if (!password || password.length < 8) return showError('Password must be at least 8 characters.');
-
-    const payload = { name, email, password };
-    const url = (BACKEND_BASE || window.location.origin) + '/auth/signup';
+    if (!name) return showError('Enter your name.');
+    if (!email.endsWith('@mylaurier.ca')) return showError('Use @mylaurier.ca email.');
+    if (password.length < 8) return showError('Password must be at least 8 characters.');
 
     try {
-      btn.disabled = true;
-      btn.textContent = 'Signing up...';
+      btn.disabled = true; btn.textContent='Signing up...';
 
-      const res = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',            
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      const res = await fetch(`${BACKEND_BASE}/auth/signup`, {
+        method:"POST",
+        credentials:"include",
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,email,password})
       });
 
-      let data;
-      try { data = await res.json(); } catch (err) { data = {}; }
+      const data = await res.json().catch(()=>({}));
 
       if (res.status === 201) {
-        showSuccess(data.message || 'Signup successful. Redirecting...');
-        setTimeout(()=> {
-          window.location.href = window.location.origin + '/walkingbuddy/index.html';
-        }, 900);
+        localStorage.setItem("user", JSON.stringify({
+          id: data.user_id,
+          name: data.name,
+          email: data.email
+        }));
+
+        showSuccess("Signup successful. Redirecting...");
+        setTimeout(()=>window.location.href="index.html",800);
       } else {
-        const detail = data.detail || data.message || data.error || JSON.stringify(data) || res.statusText;
-        showError(`Signup failed: ${detail}`);
+        showError(data.detail || data.message || "Signup failed.");
       }
-    } catch (err) {
-      console.error('Signup error', err);
-      showError('Network error');
+    } catch {
+      showError("Network error.");
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Sign Up';
+      btn.disabled=false; btn.textContent="Sign Up";
     }
   });
 })();
-</script>
-</body>
-</html>
 </script>
 
 </body>
