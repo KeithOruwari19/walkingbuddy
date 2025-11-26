@@ -19,6 +19,9 @@ from backend.auth import auth_storage
 
 from .database import RoomDatabase
 
+import logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
 class ConnectionManager:
@@ -174,25 +177,64 @@ async def leave_room(req: LeaveRoomRequest):
             raise HTTPException(status_code=400, detail=str(e))
             
 @router.delete("/{room_id}")
-async def delete_room(room_id: str, request: Request):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+async def delete_room(room_id: str, request: Request, user_id: Optional[str] = None):
+    # 1) Read session user id (and some common alternate keys)
+    session_user = None
+    try:
+        session_user = request.session.get("user_id") or request.session.get("id") or request.session.get("userId")
+    except Exception:
+        # session access failed — continue so we can log useful info
+        session_user = None
+
+    # debug log incoming info
+    logger.info("[rooms.delete] request to delete %s — session_user=%s query_user=%s headers=%s",
+                room_id, session_user, user_id, dict(request.headers))
+
+    # choose authoritative authenticated id (session preferred)
+    auth_user = session_user or user_id or request.query_params.get("user_id")
+    if not auth_user:
+        # dump session keys to logs to help debug
+        try:
+            logger.info("[rooms.delete] session keys: %s", list(request.session.keys()))
+        except Exception:
+            logger.info("[rooms.delete] could not enumerate session keys")
+        raise HTTPException(status_code=401, detail="Authentication required (no session). For debugging you can pass ?user_id=<id>.")
+
+    # fetch the room
     room = RoomDatabase.get_room(room_id)
     if not room:
+        logger.info("[rooms.delete] room %s not found (auth_user=%s)", room_id, auth_user)
         raise HTTPException(status_code=404, detail=f"Room {room_id} not found")
-    if room.get("creator_id") != user_id:
+
+    # tolerant extraction of creator id from room object
+    creator = room.get("creator_id") or room.get("creatorId") or room.get("creator") or room.get("user_id") or None
+
+    # log room + creator for debugging
+    logger.info("[rooms.delete] found room=%s creator=%s auth_user-provided=%s", room_id, creator, auth_user)
+
+    # tolerant comparison: normalize both sides to strings
+    def norm(v):
+        try:
+            return None if v is None else str(v)
+        except Exception:
+            return str(v)
+
+    if norm(creator) != norm(auth_user):
+        logger.info("[rooms.delete] permission denied — creator(%s) != auth(%s)", norm(creator), norm(auth_user))
         raise HTTPException(status_code=403, detail="Only the room creator may delete this room")
+
+    # perform delete and broadcast
     try:
         removed = RoomDatabase.delete_room(room_id)
+        # emit a delete event with a small room object (room_id + optional creator_id)
         await emit_room_event("room:delete", {"room_id": room_id})
+        logger.info("[rooms.delete] deleted room %s by user %s", room_id, auth_user)
         return {"success": True, "message": f"Room {room_id} deleted.", "room": removed}
     except ValueError as e:
+        logger.exception("[rooms.delete] delete_room ValueError for %s: %s", room_id, e)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[rooms] delete_room failed for {room_id}: {e}")
+        logger.exception("[rooms.delete] unexpected error deleting %s: %s", room_id, e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/status")
