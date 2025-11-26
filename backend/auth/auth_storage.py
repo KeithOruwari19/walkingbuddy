@@ -205,4 +205,3 @@ def get_all_users() -> list:
         }
         for user in USERS_BY_ID.values()
     ]
-    
