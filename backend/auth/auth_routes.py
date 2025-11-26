@@ -12,7 +12,7 @@ API Endpoints:
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional
+from typing import Optional, List, Dict
 
 from backend.auth import auth_storage
 
@@ -315,14 +315,14 @@ def get_session_user_id_optional(request: Request) -> Optional[str]:
     """
     return request.session.get("user_id")
 
-@user_router.get("/{user_id}")
+@router.get("/{user_id}")
 def get_user(user_id: str):
     user = auth_storage.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {"user_id": user["id"], "name": user["name"], "email": user["email"]}
 
-@user_router.post("/batch")
+@router.post("/batch")
 def batch_users(ids: List[str]):
     out: Dict[str, Optional[Dict]] = {}
     for uid in ids:
@@ -332,3 +332,4 @@ def batch_users(ids: List[str]):
         else:
             out[uid] = None
     return out
+    
