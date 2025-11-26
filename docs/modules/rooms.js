@@ -1,5 +1,6 @@
-const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
+const BACKEND_HOST = "https://cp317-group-18-project-onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
+const USER_API_BASE = `${BACKEND_HOST}/api/users`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
   : `ws://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`;
@@ -14,11 +15,8 @@ function getStoredUser() {
     const raw = localStorage.getItem("user");
     if (!raw || raw === "null") return null;
     return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
-
 function getCurrentUserId() {
   const u = getStoredUser();
   if (!u) return null;
@@ -29,8 +27,12 @@ function getCurrentUserName() {
   if (!u) return null;
   return u.name || u.full_name || u.displayName || u.email || null;
 }
-
 function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function normalizeId(id) {
+  if (id === null || id === undefined) return null;
+  return String(id);
+}
 
 function normalizeRoom(r) {
   r = r || {};
@@ -52,9 +54,12 @@ function normalizeRoom(r) {
     r.time ||
     null;
 
+  const rawId = (r.room_id ?? r.id ?? r.uuid ?? r.roomId ?? (r.raw && (r.raw.room_id ?? r.raw.id ?? r.raw.uuid))) ?? null;
+  const canonicalId = rawId != null ? String(rawId) : `local-${Date.now()}`;
+
   return {
-    id: r.room_id || r.id || r.uuid || r.roomId || String(r.id || r.room_id || Date.now()),
-    name: r.name || r.room_name || r.destination || r.title || `Room ${r.room_id || r.id || ''}`,
+    id: canonicalId,
+    name: r.name || r.room_name || r.destination || r.title || `Room ${rawId || ''}`,
     members: Array.isArray(r.members) ? r.members.length : (r.members ?? (Array.isArray(r.users) ? r.users.length : (r.count ?? 0))),
     meetTime: meet,
     startLocation: r.startLocation || r.start_location || r.start || r.startAddr || '',
@@ -65,404 +70,35 @@ function normalizeRoom(r) {
   };
 }
 
-function showMessage(text, err=false) {
-  const box = $("#message");
-  if (!box) return console.log(text);
-  box.textContent = text;
-  box.className = err ? "msg-box error" : "msg-box";
-  box.style.display = "block";
-  setTimeout(() => box.style.display = "none", 2500);
+function roomMatches(a, b) {
+  if (!a || !b) return false;
+  const aid = normalizeId(a.id);
+  const bid = normalizeId(b.id);
+  if (aid && bid && aid === bid) return true;
+
+  const aRaw = a.raw || {};
+  const bRaw = b.raw || {};
+  const aRoomId = normalizeId(aRaw.room_id || aRaw.id || aRaw.uuid);
+  const bRoomId = normalizeId(bRaw.room_id || bRaw.id || bRaw.uuid);
+  if (aRoomId && bRoomId && aRoomId === bRoomId) return true;
+
+  const aSig = `${normalizeId(a.name)}|${normalizeId(a.creatorId)}`;
+  const bSig = `${normalizeId(b.name)}|${normalizeId(b.creatorId)}`;
+  if (aSig && bSig && aSig === bSig) return true;
+
+  return false;
 }
 
-function renderJoinedRooms() {
-  const container = $("#joined-rooms-list");
-  if (!container) return;
-  container.innerHTML = "";
-  if (!joinedRooms.length) {
-    container.innerHTML = `<p style="color:#777;font-size:14px;">You haven't joined any rooms yet.</p>`;
-    return;
+function ensureRoomInserted(newRoom, { toTop = false } = {}) {
+  if (!newRoom || !newRoom.id) return;
+  const out = [];
+  let seen = false;
+  for (const r of rooms) {
+    if (roomMatches(r, newRoom)) {
+      if (!seen) { out.push(newRoom); seen = true; }
+    } else out.push(r);
   }
-  const currentUserId = getCurrentUserId();
-  joinedRooms.forEach(roomId => {
-    const room = rooms.find(r => (r.id === roomId || r.name === roomId));
-    if (!room) return;
-    const div = document.createElement("div");
-    div.classList.add("room-card");
-    div.dataset.roomId = room.id;
-    div.innerHTML = `
-      <h3 class="room-title">${escapeHtml(room.name)}</h3>
-      <div class="room-meta">
-        <p><strong>Meeting:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
-        <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
-      </div>
-      <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
-      ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
-    `;
-    container.appendChild(div);
-  });
-}
-
-function renderRooms() {
-  const list = $("#room-list");
-  const empty = $("#no-rooms-message");
-  if (!list) return;
-  if (!rooms.length) {
-    if (empty) empty.style.display = "block";
-    list.innerHTML = "";
-    return;
-  }
-  if (empty) empty.style.display = "none";
-  list.innerHTML = "";
-  const currentUserId = getCurrentUserId();
-  rooms.forEach(room => {
-    const div = document.createElement("div");
-    div.classList.add("room-card");
-    div.dataset.roomId = room.id;
-    const isCreator = room.creatorId && currentUserId && String(room.creatorId) === String(currentUserId);
-    div.innerHTML = `
-      <h3 class="room-title">${escapeHtml(room.name)}</h3>
-      <div class="room-meta">
-        <p><strong>Members:</strong> ${room.members ?? 0}</p>
-        <p><strong>Meeting Time:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
-        <p><strong>Start Location:</strong> ${escapeHtml(room.startLocation || "")}</p>
-        <p><strong>Destination:</strong> ${escapeHtml(room.destination || "")}</p>
-        <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
-      </div>
-      <div class="room-actions">
-        <button class="btn secondary" data-join="${room.id}">Join Room</button>
-        ${isCreator ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
-      </div>
-    `;
-    list.appendChild(div);
-  });
-}
-
-function loadLocalBackup() {
-  try {
-    rooms = JSON.parse(localStorage.getItem("rooms") || "[]").map(normalizeRoom);
-    joinedRooms = JSON.parse(localStorage.getItem("joinedRooms") || "[]");
-  } catch (e) {
-    rooms = []; joinedRooms = [];
-  }
-  renderJoinedRooms();
-  renderRooms();
-}
-
-function saveLocalBackup() {
-  try {
-    localStorage.setItem("rooms", JSON.stringify(rooms.map(r=>r.raw || r)));
-    localStorage.setItem("joinedRooms", JSON.stringify(joinedRooms));
-  } catch (e) {}
-}
-
-async function fetchRoomsFromServer() {
-  try {
-    const res = await fetch(`${API_BASE}/list`, { credentials: "include" });
-    if (!res.ok) throw new Error("Failed to fetch rooms");
-    const j = await res.json();
-    const serverRooms = Array.isArray(j.rooms) ? j.rooms.map(normalizeRoom) : [];
-    const userId = getCurrentUserId();
-    const userName = getCurrentUserName();
-    serverRooms.forEach(r => {
-      if ((!r.creatorName || r.creatorName === null) && r.creatorId && userId && String(r.creatorId) === String(userId)) {
-        r.creatorName = userName || r.creatorName;
-      }
-    });
-    rooms = serverRooms;
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-    return true;
-  } catch (e) {
-    console.warn("fetchRoomsFromServer failed:", e);
-    loadLocalBackup();
-    return false;
-  }
-}
-
-async function createRoomOnServer(roomPayload) {
-  try {
-    const currentUser = getStoredUser();
-    if (currentUser) {
-      roomPayload.user_id = roomPayload.user_id || (currentUser.id || currentUser.user_id || currentUser.email || currentUser.name);
-      roomPayload.creator_name = roomPayload.creator_name || (currentUser.name || currentUser.email || null);
-    }
-    const res = await fetch(`${API_BASE}/create`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(roomPayload)
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "create failed");
-    }
-    const j = await res.json();
-    const created = normalizeRoom(j.room || j);
-    const uid = getCurrentUserId();
-    if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
-      created.creatorName = getCurrentUserName();
-    }
-    if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-    return created;
-  } catch (e) {
-    showMessage("Failed to create room (server). Using local fallback.", true);
-    console.warn(e);
-    const created = normalizeRoom({
-      id: `local-${Date.now()}`,
-      name: roomPayload.room_name || roomPayload.destination || roomPayload.name,
-      members: 1,
-      meetTime: roomPayload.meetTime || roomPayload.meet_time || null,
-      startLocation: roomPayload.start_coord || roomPayload.startLocation || "",
-      destination: roomPayload.destination || "",
-      creatorId: getCurrentUserId(),
-      creatorName: getCurrentUserName()
-    });
-    rooms.unshift(created);
-    saveLocalBackup();
-    renderRooms();
-    return created;
-  }
-}
-
-async function joinRoomOnServer(roomId, userId) {
-  try {
-    const res = await fetch(`${API_BASE}/join`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_id: roomId, user_id: userId })
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || "join failed");
-    }
-    const j = await res.json();
-    const updated = normalizeRoom(j.room || j);
-    rooms = rooms.map(r => r.id === updated.id ? updated : r);
-    if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-    try { localStorage.setItem("currentRoom", JSON.stringify(j.room || j)); } catch {}
-    return updated;
-  } catch (e) {
-    showMessage("Failed to join on server, falling back to local.", true);
-    if (!joinedRooms.includes(roomId)) joinedRooms.push(roomId);
-    saveLocalBackup();
-    renderJoinedRooms();
-    return null;
-  }
-}
-
-async function deleteRoomOnServer(roomId) {
-  const existingRoom = rooms.find(r => r.id === roomId);
-  try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    });
-
-    const text = await res.text();
-    let body = null;
-    try { body = JSON.parse(text); } catch(e) { body = text; }
-
-    if (!res.ok) {
-      const errMsg = (body && body.detail) || (body && body.message) || (typeof body === 'string' ? body : `HTTP ${res.status}`);
-      showMessage(`Failed to delete room: ${errMsg}`, true);
-      console.warn('delete failed', res.status, body);
-      return false;
-    }
-
-    rooms = rooms.filter(r => r.id !== roomId);
-    joinedRooms = joinedRooms.filter(n => n !== roomId && n !== String(roomId));
-    saveLocalBackup();
-    renderRooms();
-    renderJoinedRooms();
-    return true;
-  } catch (e) {
-    showMessage('Network error while deleting room', true);
-    console.warn('delete exception', e);
-    return false;
-  }
-}
-
-function connectRoomsSocket() {
-  const url = WS_URL;
-  try {
-    ws = new WebSocket(url);
-  } catch (e) {
-    console.warn("WebSocket connect failed", e);
-    return;
-  }
-
-  ws.addEventListener("open", () => console.log("rooms socket open", url));
-  ws.addEventListener("message", ev => {
-    try {
-      const data = JSON.parse(ev.data);
-      if (!data || !data.type) return;
-      console.log("rooms socket message", data);
-      if (data.type === "room:new") {
-        const r = normalizeRoom(data.room || data);
-        if ((!r.creatorName || r.creatorName === null) && r.creatorId && getCurrentUserId() && String(r.creatorId) === String(getCurrentUserId())) {
-          r.creatorName = getCurrentUserName();
-        }
-        if (!rooms.find(x => x.id === r.id)) rooms.unshift(r);
-        saveLocalBackup();
-        renderRooms();
-      } else if (data.type === "room:delete") {
-        const deletedId = (data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room;
-        rooms = rooms.filter(x => x.id !== deletedId);
-        joinedRooms = joinedRooms.filter(n => n !== deletedId && n !== String(deletedId));
-        saveLocalBackup();
-        renderRooms();
-        renderJoinedRooms();
-      } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
-        const r = normalizeRoom(data.room || data);
-        rooms = rooms.map(x => x.id === r.id ? r : x);
-        saveLocalBackup();
-        renderRooms();
-        renderJoinedRooms();
-      }
-    } catch (err) {
-      console.warn("invalid rooms socket message", err);
-    }
-  });
-  ws.addEventListener("close", () => {
-    console.log("rooms socket closed — will attempt reconnect in 3s");
-    setTimeout(connectRoomsSocket, 3000);
-  });
-  ws.addEventListener("error", e => console.warn("rooms socket error", e));
-}
-
-function wireUI() {
-  $("#btn-create-room")?.addEventListener("click", async () => {
-    const name = $("#room-name")?.value?.trim();
-    const meet = $("#meet-time")?.value?.trim();
-    const start = $("#start-location")?.value?.trim();
-    const dest = $("#destination")?.value?.trim();
-    if (!name || !start || !dest) return showMessage("Fill in name/start/destination.", true);
-    if (meet && !isValidMeetTime(meet)) return showMessage("Invalid date.", true);
-
-    const payload = {
-      user_id: getCurrentUserId(),
-      destination: dest,
-      start_coord: [0,0],
-      dest_coord: [0,0],
-      max_members: 10,
-      room_name: name,
-      meetTime: meet,
-      startLocation: start
-    };
-
-    $("#create-room-form").style.display = "none";
-    showMessage("Creating room...");
-    const created = await createRoomOnServer(payload);
-    if (created) {
-      showMessage("Room created.");
-      await joinRoomOnServer(created.id, getCurrentUserId());
-    } else {
-      showMessage("Room created locally.", true);
-    }
-  });
-
-  document.addEventListener("click", async (ev) => {
-    const joinId = ev.target?.dataset?.join;
-    const enterId = ev.target?.dataset?.enter;
-    const deleteId = ev.target?.dataset?.delete;
-    if (joinId) {
-      ev.preventDefault();
-      await joinRoomOnServer(joinId, getCurrentUserId());
-      return;
-    }
-    if (enterId) {
-      ev.preventDefault();
-      const room = rooms.find(r => r.id === enterId);
-      if (room) {
-        localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
-        if (!joinedRooms.includes(room.id)) {
-          joinedRooms.push(room.id);
-          saveLocalBackup();
-        }
-        window.location.href = "chat.html";
-      }
-      return;
-    }
-    if (deleteId) {
-      ev.preventDefault();
-      const existing = rooms.find(r => r.id === deleteId);
-      rooms = rooms.filter(r => r.id !== deleteId);
-      joinedRooms = joinedRooms.filter(n => n !== deleteId);
-      saveLocalBackup();
-      renderRooms();
-      renderJoinedRooms();
-      const ok = await deleteRoomOnServer(deleteId);
-      if (!ok) showMessage('Failed to delete room on server.', true);
-      return;
-    }
-  });
-
-  $("#toggle-create-room-form")?.addEventListener("click", () => {
-    const form = $("#create-room-form");
-    form.style.display = (form.style.display === "none" || !form.style.display) ? "block" : "none";
-  });
-}
-
-function isValidMeetTime(raw) {
-  if (!raw || !raw.includes("-")) return false;
-  const year = raw.split("-")[0];
-  if (!/^\d{4}$/.test(year)) return false;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return false;
-  const y = d.getFullYear();
-  return y >= 2020 && y <= 2100;
-}
-
-(async function init() {
-  const AUTH_WAIT_MS = 2000;
-  function getLocalUserSafe() {
-    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
-  }
-
-  const authReady = new Promise((resolve) => {
-    const existing = getLocalUserSafe();
-    if (existing) { resolve(existing); return; }
-
-    function onStorage(e) {
-      if (e.key === "user") {
-        window.removeEventListener("storage", onStorage);
-        window.removeEventListener("auth:update", onAuthUpdate);
-        try { resolve(e.newValue ? JSON.parse(e.newValue) : null); } catch { resolve(null); }
-      }
-    }
-    function onAuthUpdate(evt) {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("auth:update", onAuthUpdate);
-      resolve(evt.detail ?? getLocalUserSafe());
-    }
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("auth:update", onAuthUpdate);
-    setTimeout(() => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("auth:update", onAuthUpdate);
-      resolve(getLocalUserSafe());
-    }, AUTH_WAIT_MS);
-  });
-
-  const authUser = await authReady;
-
-  if (!authUser) {
-    window.location.href = "login.html";
-    return;
-  }
-
-  loadLocalBackup();
-  connectRoomsSocket();
-  await fetchRoomsFromServer();
-  wireUI();
-  renderJoinedRooms();
-  renderRooms();
-})();
+  if (!seen) {
+    if (toTop) out.unshift(newRoom); else out.push(newRoom);
+  } else if (toTop) {
+    const idx = out.findIndex(x => roomM
