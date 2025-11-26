@@ -160,8 +160,8 @@
 
   function setLoggedInNav(user) {
     if (!navLinks) return;
-    const loginA = navLinks.querySelector('a[href="login.html"]');
-    const signupA = navLinks.querySelector('a[href="signup.html"]');
+    const loginA = navLinks.querySelector('a[href="walkingbuddy/login.html"]');
+    const signupA = navLinks.querySelector('a[href="walkingbuddy/signup.html"]');
 
     try {
       if (loginA) loginA.remove();
@@ -210,7 +210,7 @@
     });
 
     if (!verifyRes.ok) {
-      window.location.href = `${window.location.origin}/login.html`;
+      window.location.href = `${window.location.origin}/walkingbuddy/login.html`;
       return;
     }
     const user = await verifyRes.json();
