@@ -407,15 +407,46 @@ function isValidMeetTime(raw) {
 }
 
 (async function init() {
-  const storedUser = getStoredUser();
-  if (!storedUser) {
-    let redirected = false;
-    await new Promise(res => setTimeout(res, 450));
-    if (!getStoredUser()) {
-      window.location.href = "login.html";
-      redirected = true;
+  const AUTH_WAIT_MS = 2000;
+
+  function getLocalUserSafe() {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch { return null; }
+  }
+
+  const authReady = new Promise((resolve) => {
+    const existing = getLocalUserSafe();
+    if (existing) { resolve(existing); return; }
+    function onStorage(e) {
+      if (e.key === "user") {
+        window.removeEventListener("storage", onStorage);
+        window.removeEventListener("auth:update", onAuthUpdate);
+        try { resolve(e.newValue ? JSON.parse(e.newValue) : null); } catch { resolve(null); }
+      }
     }
-    if (redirected) return;
+
+    function onAuthUpdate(evt) {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("auth:update", onAuthUpdate);
+      resolve(evt.detail ?? getLocalUserSafe());
+    }
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("auth:update", onAuthUpdate);
+
+    setTimeout(() => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("auth:update", onAuthUpdate);
+      resolve(getLocalUserSafe());
+    }, AUTH_WAIT_MS);
+  });
+
+  const authUser = await authReady;
+
+  if (!authUser) {
+    window.location.href = "login.html";
+    return;
   }
 
   loadLocalBackup();
@@ -426,4 +457,6 @@ function isValidMeetTime(raw) {
   wireUI();
   renderJoinedRooms();
   renderRooms();
+})();
+
 })();
