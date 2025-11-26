@@ -1,5 +1,6 @@
-const API_BASE = "/api/rooms"; 
-const WS_PATH = "/api/rooms/ws";
+const BACKEND_HOST = "https://cp317-group-18-project.onrender.com"; // <- replace if needed
+const API_BASE = `${BACKEND_HOST}/api/rooms`;
+const WS_URL = `${(BACKEND_HOST.startsWith("https") ? "wss" : "ws")}://${BACKEND_HOST.replace(/^https?:\/\//,'')}/api/rooms/ws`;
 
 let rooms = [];       
 let joinedRooms = []; 
@@ -190,9 +191,7 @@ async function joinRoomOnServer(roomId, userId) {
 
 let ws;
 function connectRoomsSocket() {
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const urlHost = location.host;
-  const url = `${proto}://${urlHost}${WS_PATH}`;
+  const url = WS_URL;
   try {
     ws = new WebSocket(url);
   } catch (e) {
