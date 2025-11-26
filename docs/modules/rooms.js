@@ -1,5 +1,6 @@
 const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
+const USER_API_BASE = `${BACKEND_HOST}/api/users`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
   : `ws://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`;
@@ -61,7 +62,8 @@ function normalizeRoom(r) {
     destination: r.destination || r.dest || r.to || '',
     creatorId: creatorId,
     creatorName: creatorName,
-    raw: r
+    raw: r,
+    _localFallback: !!r._localFallback
   };
 }
 
@@ -155,6 +157,129 @@ function saveLocalBackup() {
   } catch (e) {}
 }
 
+function removeMatchingLocalFallback(serverRoom) {
+  if (!serverRoom) return;
+  const name = serverRoom.name || serverRoom.room_name || serverRoom.destination || null;
+  const creatorId = serverRoom.creatorId || serverRoom.creator_id || serverRoom.creator || null;
+  if (!name || !creatorId) return;
+  const idx = rooms.findIndex(r => r._localFallback && String(r.creatorId) === String(creatorId) && String(r.name) === String(name));
+  if (idx >= 0) {
+    rooms.splice(idx, 1);
+  }
+}
+
+const userCache = new Map();
+
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, { credentials: 'include', ...opts });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Fetch ${url} failed: ${res.status} ${res.statusText} ${txt}`);
+  }
+  return res.json();
+}
+
+async function batchFetchUsers(uids) {
+  if (!Array.isArray(uids) || uids.length === 0) return {};
+
+  try {
+    const body = JSON.stringify(uids);
+    const json = await fetchJSON(`${USER_API_BASE}/batch`, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+    const result = {};
+    for (const uid of uids) {
+      const entry = json && (json[uid] || null);
+      if (!entry) { result[uid] = null; continue; }
+      if (typeof entry === 'string') result[uid] = entry;
+      else result[uid] = entry.name || entry.displayName || null;
+    }
+    return result;
+  } catch (err) {
+    const map = {};
+    await Promise.all(uids.map(async (uid) => {
+      try {
+        const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
+        map[uid] = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null)) || null;
+      } catch (e) {
+        map[uid] = null;
+      }
+    }));
+    return map;
+  }
+}
+
+function uidToInitialsFromName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function uidToInitials(uid) {
+  if (!uid) return '??';
+  if (typeof uid === 'string') {
+    const clean = uid.replace(/[^a-zA-Z0-9]/g, '');
+    if (clean.length <= 4) return clean.toUpperCase();
+    return clean.slice(0,4).toUpperCase();
+  }
+  return String(uid).slice(0,4).toUpperCase();
+}
+
+async function getUserName(uid) {
+  if (!uid) return 'Unknown';
+  const stored = getStoredUser();
+  if (stored && (stored.user_id === uid || stored.id === uid || stored.email === uid)) {
+    return stored.name || stored.displayName || stored.email || uidToInitials(uid);
+  }
+
+  if (userCache.has(uid)) {
+    const v = userCache.get(uid);
+    if (v instanceof Promise) return v;
+    return v;
+  }
+
+  const p = (async () => {
+    try {
+      const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
+      const name = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null));
+      const final = name || uidToInitials(uid) || 'Unknown';
+      userCache.set(uid, final);
+      return final;
+    } catch (err) {
+      const fallback = uidToInitials(uid) || 'Unknown';
+      userCache.set(uid, fallback);
+      return fallback;
+    }
+  })();
+
+  userCache.set(uid, p);
+  return p;
+}
+
+async function resolveNamesForRooms(roomArray) {
+  if (!Array.isArray(roomArray) || roomArray.length === 0) return;
+  const uids = new Set();
+  for (const r of roomArray) {
+    if (r && r.creatorId && !r.creatorName) uids.add(String(r.creatorId));
+  }
+  if (!uids.size) return;
+
+  const uidList = Array.from(uids);
+  const map = await batchFetchUsers(uidList);
+
+  for (const uid of uidList) {
+    const name = map[uid] || null;
+    if (name) userCache.set(uid, name);
+    else if (!userCache.has(uid)) userCache.set(uid, uidToInitials(uid));
+  }
+
+  for (const r of roomArray) {
+    if (r && r.creatorId && !r.creatorName) {
+      const found = userCache.get(String(r.creatorId));
+      r.creatorName = (found instanceof Promise) ? await found : (found || uidToInitials(r.creatorId));
+    }
+  }
+}
+
 async function fetchRoomsFromServer() {
   try {
     const res = await fetch(`${API_BASE}/list`, { credentials: "include" });
@@ -168,6 +293,9 @@ async function fetchRoomsFromServer() {
         r.creatorName = userName || r.creatorName;
       }
     });
+
+    await resolveNamesForRooms(serverRooms);
+
     rooms = serverRooms;
     saveLocalBackup();
     renderJoinedRooms();
@@ -193,24 +321,56 @@ async function createRoomOnServer(roomPayload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(roomPayload)
     });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "create failed");
+
+    const text = await res.text().catch(()=>"");
+    let j = null;
+    try { j = text ? JSON.parse(text) : null; } catch(e) { j = null; }
+
+    const roomObj = j && (j.room || j) ? (j.room || j) : null;
+    if (res.ok && roomObj) {
+      const created = normalizeRoom(roomObj);
+      const uid = getCurrentUserId();
+      if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
+        created.creatorName = getCurrentUserName();
+      }
+
+      removeMatchingLocalFallback(created);
+
+      if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
+
+      try {
+        if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+      } catch(e){}
+
+      saveLocalBackup();
+      renderJoinedRooms();
+      renderRooms();
+      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
+      return created;
     }
-    const j = await res.json();
-    const created = normalizeRoom(j.room || j);
-    const uid = getCurrentUserId();
-    if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
-      created.creatorName = getCurrentUserName();
+
+    if (!res.ok && roomObj) {
+      const created = normalizeRoom(roomObj);
+      const uid = getCurrentUserId();
+      if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
+        created.creatorName = getCurrentUserName();
+      }
+
+      removeMatchingLocalFallback(created);
+
+      if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
+      try { if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id); } catch {}
+      saveLocalBackup();
+      renderJoinedRooms();
+      renderRooms();
+      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
+      return created;
     }
-    if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
-    saveLocalBackup();
-    renderJoinedRooms();
-    renderRooms();
-    return created;
+
+    throw new Error(`Create failed or no room returned from server. status=${res.status} body=${text}`);
   } catch (e) {
+    console.warn("createRoomOnServer fallback:", e);
     showMessage("Failed to create room (server). Using local fallback.", true);
-    console.warn(e);
     const created = normalizeRoom({
       id: `local-${Date.now()}`,
       name: roomPayload.room_name || roomPayload.destination || roomPayload.name,
@@ -219,17 +379,21 @@ async function createRoomOnServer(roomPayload) {
       startLocation: roomPayload.start_coord || roomPayload.startLocation || "",
       destination: roomPayload.destination || "",
       creatorId: getCurrentUserId(),
-      creatorName: getCurrentUserName()
+      creatorName: getCurrentUserName(),
+      _localFallback: true
     });
-    rooms.unshift(created);
+
+    if (!rooms.find(r => r._localFallback && String(r.name) === String(created.name) && String(r.creatorId) === String(created.creatorId))) {
+      rooms.unshift(created);
+    }
+
     try {
-      if (!joinedRooms.includes(created.id)) {
-        joinedRooms.push(created.id);
-      }
-      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
-    } catch (e) {  }
+      if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+    } catch(e){}
+
     saveLocalBackup();
     renderRooms();
+    renderJoinedRooms();
     return created;
   }
 }
@@ -248,6 +412,11 @@ async function joinRoomOnServer(roomId, userId) {
     }
     const j = await res.json();
     const updated = normalizeRoom(j.room || j);
+
+    if ((!updated.creatorName || updated.creatorName === null) && updated.creatorId && getCurrentUserId() && String(updated.creatorId) === String(getCurrentUserId())) {
+      updated.creatorName = getCurrentUserName();
+    }
+
     rooms = rooms.map(r => r.id === updated.id ? updated : r);
     if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
     saveLocalBackup();
@@ -313,6 +482,7 @@ function connectRoomsSocket() {
       console.log("rooms socket message", data);
       if (data.type === "room:new") {
         const r = normalizeRoom(data.room || data);
+        removeMatchingLocalFallback(r);
         if ((!r.creatorName || r.creatorName === null) && r.creatorId && getCurrentUserId() && String(r.creatorId) === String(getCurrentUserId())) {
           r.creatorName = getCurrentUserName();
         }
@@ -328,7 +498,8 @@ function connectRoomsSocket() {
         renderJoinedRooms();
       } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
-        rooms = rooms.map(x => x.id === r.id ? r : x);
+        const idx = rooms.findIndex(x => x.id === r.id);
+        if (idx >= 0) rooms[idx] = r; else rooms.unshift(r);
         saveLocalBackup();
         renderRooms();
         renderJoinedRooms();
@@ -369,63 +540,60 @@ function wireUI() {
     const created = await createRoomOnServer(payload);
     if (created) {
       showMessage("Room created.");
-      await joinRoomOnServer(created.id, getCurrentUserId());
+      try {
+        if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+        saveLocalBackup();
+        localStorage.setItem("currentRoom", JSON.stringify(created.raw || created));
+      } catch(e){}
+      await joinRoomOnServer(created.id, getCurrentUserId()).catch(()=>{});
     } else {
       showMessage("Room created locally.", true);
     }
   });
 
   document.addEventListener("click", async (ev) => {
-  const joinId = ev.target?.dataset?.join;
-  const enterId = ev.target?.dataset?.enter;
-  const deleteId = ev.target?.dataset?.delete;
-
-  if (joinId) {
-    ev.preventDefault();
-    await joinRoomOnServer(joinId, getCurrentUserId());
-    return;
-  }
-
-  if (enterId) {
-    ev.preventDefault();
-
-    const room = rooms.find(r => r.id === enterId);
-    if (!room) return showMessage("Room not found.", true);
-
-    if (!joinedRooms.includes(room.id)) {
-      showMessage("Joining room before entering...");
-      const joined = await joinRoomOnServer(room.id, getCurrentUserId());
-      if (!joined) {
-        showMessage("Unable to join room. Cannot enter chat.", true);
-        return;
+    const joinId = ev.target?.dataset?.join;
+    const enterId = ev.target?.dataset?.enter;
+    const deleteId = ev.target?.dataset?.delete;
+    if (joinId) {
+      ev.preventDefault();
+      await joinRoomOnServer(joinId, getCurrentUserId());
+      return;
+    }
+    if (enterId) {
+      ev.preventDefault();
+      const room = rooms.find(r => r.id === enterId);
+      if (room) {
+        if (!joinedRooms.includes(room.id)) {
+          showMessage("Joining room before entering...");
+          const joined = await joinRoomOnServer(room.id, getCurrentUserId());
+          if (!joined) {
+            showMessage("Unable to join room. Cannot enter chat.", true);
+            return;
+          }
+        }
+        localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
+        if (!joinedRooms.includes(room.id)) {
+          joinedRooms.push(room.id);
+          saveLocalBackup();
+        }
+        window.location.href = "chat.html";
       }
-      if (!joinedRooms.includes(room.id)) joinedRooms.push(room.id);
-      saveLocalBackup();
+      return;
     }
-
-    try { localStorage.setItem("currentRoom", JSON.stringify(room.raw || room)); } catch {}
-    if (!joinedRooms.includes(room.id)) {
-      joinedRooms.push(room.id);
+    if (deleteId) {
+      ev.preventDefault();
+      const existing = rooms.find(r => r.id === deleteId);
+      rooms = rooms.filter(r => r.id !== deleteId);
+      joinedRooms = joinedRooms.filter(n => n !== deleteId);
       saveLocalBackup();
+      renderRooms();
+      renderJoinedRooms();
+      const ok = await deleteRoomOnServer(deleteId);
+      if (!ok) showMessage('Failed to delete room on server.', true);
+      return;
     }
-    window.location.href = "chat.html";
-    return;
-  }
-
-  if (deleteId) {
-    ev.preventDefault();
-    const existing = rooms.find(r => r.id === deleteId);
-    rooms = rooms.filter(r => r.id !== deleteId);
-    joinedRooms = joinedRooms.filter(n => n !== deleteId);
-    saveLocalBackup();
-    renderRooms();
-    renderJoinedRooms();
-    const ok = await deleteRoomOnServer(deleteId);
-    if (!ok) showMessage('Failed to delete room on server.', true);
-    return;
-  }
-});
-
+  });
 
   $("#toggle-create-room-form")?.addEventListener("click", () => {
     const form = $("#create-room-form");
