@@ -20,7 +20,10 @@ class RoomDatabase:
     destination: str,
     start_coord: List[float],
     dest_coord: List[float],
-    max_members: int = 10
+    max_members: int = 10,
+    name: Optional[str] = None,
+    meet_time: Optional[str] = None,
+    start_location: Optional[str] = None
   ) -> Dict:
     if room_id in ROOMS_DB:
       raise ValueError(f"Room {room_id} already exists")
@@ -28,9 +31,13 @@ class RoomDatabase:
     room = {
       "room_id": room_id,
       "creator_id": creator_id,
+      "creator_name": None,
+      "name": name or destination,
       "destination": destination,
       "start_coord": start_coord,
       "dest_coord": dest_coord,
+      "start_location": start_location or "",
+      "meet_time": meet_time or None,
       "max_members": max_members,
       "members": [creator_id],
       "created_at": datetime.utcnow().isoformat(),
@@ -95,6 +102,16 @@ class RoomDatabase:
 
     room["status"] = status
     return room
+    
+  @staticmethod
+  def delete_room(room_id: str) -> Dict:
+    room = ROOMS_DB.get(room_id)
+    if not room:
+      raise ValueError(f"Room {room_id} not found")
+    removed = ROOMS_DB.pop(room_id)
+    if room_id in CHAT_DB:
+      CHAT_DB.pop(room_id, None)
+    return removed
 
 class ChatDatabase:
   @staticmethod
@@ -125,12 +142,3 @@ class ChatDatabase:
       return True
     return False
     
-@staticmethod
-def delete_room(room_id: str) -> Dict:
-  room = ROOMS_DB.get(room_id)
-  if not room:
-    raise ValueError(f"Room {room_id} not found")
-  removed = ROOMS_DB.pop(room_id)
-  if room_id in CHAT_DB:
-    CHAT_DB.pop(room_id, None)
-  return removed
