@@ -43,6 +43,7 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="none
 app.include_router(auth_routes.router)
 app.include_router(room_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(auth_routes.user_router)
 
 
 USER_AGENT = "WalkingBuddy/1.0"
