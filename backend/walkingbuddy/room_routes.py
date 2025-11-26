@@ -93,9 +93,32 @@ def attach_creator_name(room: dict) -> dict:
         room["creator_name"] = room.get("creator_name") or None
     return room
 
+def attach_canonical_ids(room: dict, prefer_room_id: Optional[str] = None) -> dict:
+    if not isinstance(room, dict):
+        return room
+    rid = (
+        room.get("room_id")
+        or room.get("id")
+        or room.get("uuid")
+        or room.get("roomId")
+        or prefer_room_id
+    )
+    if not rid:
+        return room
+    rid = str(rid)
+    room["room_id"] = rid
+    room["id"] = rid
+    room["uuid"] = rid
+    return room
+
 async def emit_room_event(event_type: str, room: dict):
     attach_creator_name(room)
-    payload = {"type": event_type, "room": room}
+    attach_canonical_ids(room)
+    payload = {
+        "type": event_type,
+        "room": room,
+        "room_id": room.get("room_id"),
+    }
     await manager.broadcast(payload)
 
 @router.post("/create")
@@ -126,6 +149,7 @@ async def create_room(req: CreateRoomRequest, request: Request):
             pass
 
         attach_creator_name(room)
+        attach_canonical_ids(room, prefer_room_id=room_id)
 
         await emit_room_event("room:new", room)
         return {"success": True, "room": room, "message": f"Room {room_id} created."}
@@ -140,6 +164,7 @@ async def create_room(req: CreateRoomRequest, request: Request):
 def list_rooms():
     rooms = RoomDatabase.get_active_rooms()
     enriched = [attach_creator_name(dict(r)) for r in rooms]
+    enriched = [attach_canonical_ids(r) for r in enriched]
     return {"success": True, "rooms": enriched}
 
 @router.post("/join")
@@ -147,6 +172,7 @@ async def join_room(req: JoinRoomRequest):
     try:
         room = RoomDatabase.join_room(req.room_id, req.user_id)
         attach_creator_name(room)
+        attach_canonical_ids(room)
         await emit_room_event("room:join", room)
         return {
             "success": True,
@@ -164,6 +190,7 @@ async def leave_room(req: LeaveRoomRequest):
     try:
         room = RoomDatabase.leave_room(req.room_id, req.user_id)
         attach_creator_name(room)
+        attach_canonical_ids(room)
         await emit_room_event("room:leave", room)
         return {
             "success": True,
@@ -178,41 +205,32 @@ async def leave_room(req: LeaveRoomRequest):
             
 @router.delete("/{room_id}")
 async def delete_room(room_id: str, request: Request, user_id: Optional[str] = None):
-    # 1) Read session user id (and some common alternate keys)
     session_user = None
     try:
         session_user = request.session.get("user_id") or request.session.get("id") or request.session.get("userId")
     except Exception:
-        # session access failed — continue so we can log useful info
         session_user = None
 
-    # debug log incoming info
     logger.info("[rooms.delete] request to delete %s — session_user=%s query_user=%s headers=%s",
                 room_id, session_user, user_id, dict(request.headers))
 
-    # choose authoritative authenticated id (session preferred)
     auth_user = session_user or user_id or request.query_params.get("user_id")
     if not auth_user:
-        # dump session keys to logs to help debug
         try:
             logger.info("[rooms.delete] session keys: %s", list(request.session.keys()))
         except Exception:
             logger.info("[rooms.delete] could not enumerate session keys")
         raise HTTPException(status_code=401, detail="Authentication required (no session). For debugging you can pass ?user_id=<id>.")
 
-    # fetch the room
     room = RoomDatabase.get_room(room_id)
     if not room:
         logger.info("[rooms.delete] room %s not found (auth_user=%s)", room_id, auth_user)
         raise HTTPException(status_code=404, detail=f"Room {room_id} not found")
 
-    # tolerant extraction of creator id from room object
     creator = room.get("creator_id") or room.get("creatorId") or room.get("creator") or room.get("user_id") or None
 
-    # log room + creator for debugging
     logger.info("[rooms.delete] found room=%s creator=%s auth_user-provided=%s", room_id, creator, auth_user)
 
-    # tolerant comparison: normalize both sides to strings
     def norm(v):
         try:
             return None if v is None else str(v)
@@ -223,10 +241,8 @@ async def delete_room(room_id: str, request: Request, user_id: Optional[str] = N
         logger.info("[rooms.delete] permission denied — creator(%s) != auth(%s)", norm(creator), norm(auth_user))
         raise HTTPException(status_code=403, detail="Only the room creator may delete this room")
 
-    # perform delete and broadcast
     try:
         removed = RoomDatabase.delete_room(room_id)
-        # emit a delete event with a small room object (room_id + optional creator_id)
         await emit_room_event("room:delete", {"room_id": room_id})
         logger.info("[rooms.delete] deleted room %s by user %s", room_id, auth_user)
         return {"success": True, "message": f"Room {room_id} deleted.", "room": removed}
@@ -242,6 +258,7 @@ async def update_room_status(req: UpdateRoomStatusRequest):
     try:
         room = RoomDatabase.update_room_status(req.room_id, req.status)
         attach_creator_name(room)
+        attach_canonical_ids(room)
         await emit_room_event("room:update", room)
         return {
             "success": True,
