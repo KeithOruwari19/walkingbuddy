@@ -1,5 +1,6 @@
 const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
+const USER_API_BASE = `${BACKEND_HOST}/api/users`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
   : `ws://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`;
@@ -30,7 +31,7 @@ function getCurrentUserName() {
   return u.name || u.full_name || u.displayName || u.email || null;
 }
 
-function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ return String(s || "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function normalizeRoom(r) {
   r = r || {};
@@ -155,12 +156,122 @@ function saveLocalBackup() {
   } catch (e) {}
 }
 
+const userCache = new Map();
+
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, { credentials: 'include', ...opts });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Fetch ${url} failed: ${res.status} ${res.statusText} ${txt}`);
+  }
+  return res.json();
+}
+
+async function batchFetchUsers(uids) {
+  if (!Array.isArray(uids) || uids.length === 0) return {};
+  try {
+    const body = JSON.stringify(uids);
+    const json = await fetchJSON(`${USER_API_BASE}/batch`, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+    const result = {};
+    for (const uid of uids) {
+      const entry = json && (json[uid] || null);
+      if (!entry) { result[uid] = null; continue; }
+      if (typeof entry === 'string') result[uid] = entry;
+      else result[uid] = entry.name || entry.displayName || null;
+    }
+    return result;
+  } catch (err) {
+    const map = {};
+    await Promise.all(uids.map(async (uid) => {
+      try {
+        const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
+        map[uid] = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null)) || null;
+      } catch (e) {
+        map[uid] = null;
+      }
+    }));
+    return map;
+  }
+}
+
+function uidToInitialsFromName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function uidToInitials(uid) {
+  if (!uid) return '??';
+  if (typeof uid === 'string') {
+    const clean = uid.replace(/[^a-zA-Z0-9]/g, '');
+    if (clean.length <= 4) return clean.toUpperCase();
+    return clean.slice(0,4).toUpperCase();
+  }
+  return String(uid).slice(0,4).toUpperCase();
+}
+
+async function getUserName(uid) {
+  if (!uid) return 'Unknown';
+  const stored = getStoredUser();
+  if (stored && (stored.user_id === uid || stored.id === uid || stored.email === uid)) {
+    return stored.name || stored.displayName || stored.email || uidToInitials(uid);
+  }
+
+  if (userCache.has(uid)) {
+    const v = userCache.get(uid);
+    if (v instanceof Promise) return v;
+    return v;
+  }
+  const p = (async () => {
+    try {
+      const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
+      const name = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null));
+      const final = name || uidToInitials(uid) || 'Unknown';
+      userCache.set(uid, final);
+      return final;
+    } catch (err) {
+      const fallback = uidToInitials(uid) || 'Unknown';
+      userCache.set(uid, fallback);
+      return fallback;
+    }
+  })();
+
+  userCache.set(uid, p);
+  return p;
+}
+
+async function resolveNamesForRooms(roomArray) {
+  if (!Array.isArray(roomArray) || roomArray.length === 0) return;
+  const uids = new Set();
+  for (const r of roomArray) {
+    if (r && r.creatorId && !r.creatorName) uids.add(String(r.creatorId));
+  }
+  if (!uids.size) return;
+
+  const uidList = Array.from(uids);
+  const map = await batchFetchUsers(uidList);
+  for (const uid of uidList) {
+    const name = map[uid] || null;
+    if (name) userCache.set(uid, name);
+    else if (!userCache.has(uid)) userCache.set(uid, uidToInitials(uid));
+  }
+
+  for (const r of roomArray) {
+    if (r && r.creatorId && !r.creatorName) {
+      const found = userCache.get(String(r.creatorId));
+      r.creatorName = (found instanceof Promise) ? await found : (found || uidToInitials(r.creatorId));
+    }
+  }
+}
+
 async function fetchRoomsFromServer() {
   try {
     const res = await fetch(`${API_BASE}/list`, { credentials: "include" });
     if (!res.ok) throw new Error("Failed to fetch rooms");
     const j = await res.json();
     const serverRooms = Array.isArray(j.rooms) ? j.rooms.map(normalizeRoom) : [];
+
     const userId = getCurrentUserId();
     const userName = getCurrentUserName();
     serverRooms.forEach(r => {
@@ -168,6 +279,9 @@ async function fetchRoomsFromServer() {
         r.creatorName = userName || r.creatorName;
       }
     });
+
+    await resolveNamesForRooms(serverRooms);
+
     rooms = serverRooms;
     saveLocalBackup();
     renderJoinedRooms();
@@ -199,10 +313,14 @@ async function createRoomOnServer(roomPayload) {
     }
     const j = await res.json();
     const created = normalizeRoom(j.room || j);
+
     const uid = getCurrentUserId();
     if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
       created.creatorName = getCurrentUserName();
     }
+
+    await resolveNamesForRooms([created]);
+
     if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
     saveLocalBackup();
     renderJoinedRooms();
@@ -242,6 +360,9 @@ async function joinRoomOnServer(roomId, userId) {
     }
     const j = await res.json();
     const updated = normalizeRoom(j.room || j);
+
+    await resolveNamesForRooms([updated]);
+
     rooms = rooms.map(r => r.id === updated.id ? updated : r);
     if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
     saveLocalBackup();
@@ -311,8 +432,11 @@ function connectRoomsSocket() {
           r.creatorName = getCurrentUserName();
         }
         if (!rooms.find(x => x.id === r.id)) rooms.unshift(r);
-        saveLocalBackup();
-        renderRooms();
+        // resolve creatorName if needed then re-render
+        resolveNamesForRooms([r]).then(() => {
+          saveLocalBackup();
+          renderRooms();
+        }).catch(() => { saveLocalBackup(); renderRooms(); });
       } else if (data.type === "room:delete") {
         const deletedId = (data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room;
         rooms = rooms.filter(x => x.id !== deletedId);
@@ -322,10 +446,14 @@ function connectRoomsSocket() {
         renderJoinedRooms();
       } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
-        rooms = rooms.map(x => x.id === r.id ? r : x);
-        saveLocalBackup();
-        renderRooms();
-        renderJoinedRooms();
+        // update or insert
+        const idx = rooms.findIndex(x => x.id === r.id);
+        if (idx >= 0) rooms[idx] = r; else rooms.unshift(r);
+        resolveNamesForRooms([r]).then(() => {
+          saveLocalBackup();
+          renderRooms();
+          renderJoinedRooms();
+        }).catch(() => { saveLocalBackup(); renderRooms(); renderJoinedRooms(); });
       }
     } catch (err) {
       console.warn("invalid rooms socket message", err);
