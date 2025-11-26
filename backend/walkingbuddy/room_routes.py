@@ -121,6 +121,18 @@ async def leave_room(req: LeaveRoomRequest):
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
+            
+@router.delete("/{room_id}")
+async def delete_room(room_id: str):
+    try:
+        removed = RoomDatabase.delete_room(room_id)
+        await emit_room_event("room:delete", {"room_id": room_id})
+        return {"success": True, "message": f"Room {room_id} deleted.", "room": removed}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"[rooms] delete_room failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/status")
 async def update_room_status(req: UpdateRoomStatusRequest):
