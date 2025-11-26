@@ -222,6 +222,12 @@ async function createRoomOnServer(roomPayload) {
       creatorName: getCurrentUserName()
     });
     rooms.unshift(created);
+    try {
+      if (!joinedRooms.includes(created.id)) {
+        joinedRooms.push(created.id);
+      }
+      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
+    } catch (e) {  }
     saveLocalBackup();
     renderRooms();
     return created;
@@ -370,40 +376,56 @@ function wireUI() {
   });
 
   document.addEventListener("click", async (ev) => {
-    const joinId = ev.target?.dataset?.join;
-    const enterId = ev.target?.dataset?.enter;
-    const deleteId = ev.target?.dataset?.delete;
-    if (joinId) {
-      ev.preventDefault();
-      await joinRoomOnServer(joinId, getCurrentUserId());
-      return;
-    }
-    if (enterId) {
-      ev.preventDefault();
-      const room = rooms.find(r => r.id === enterId);
-      if (room) {
-        localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
-        if (!joinedRooms.includes(room.id)) {
-          joinedRooms.push(room.id);
-          saveLocalBackup();
-        }
-        window.location.href = "chat.html";
+  const joinId = ev.target?.dataset?.join;
+  const enterId = ev.target?.dataset?.enter;
+  const deleteId = ev.target?.dataset?.delete;
+
+  if (joinId) {
+    ev.preventDefault();
+    await joinRoomOnServer(joinId, getCurrentUserId());
+    return;
+  }
+
+  if (enterId) {
+    ev.preventDefault();
+
+    const room = rooms.find(r => r.id === enterId);
+    if (!room) return showMessage("Room not found.", true);
+
+    if (!joinedRooms.includes(room.id)) {
+      showMessage("Joining room before entering...");
+      const joined = await joinRoomOnServer(room.id, getCurrentUserId());
+      if (!joined) {
+        showMessage("Unable to join room. Cannot enter chat.", true);
+        return;
       }
-      return;
-    }
-    if (deleteId) {
-      ev.preventDefault();
-      const existing = rooms.find(r => r.id === deleteId);
-      rooms = rooms.filter(r => r.id !== deleteId);
-      joinedRooms = joinedRooms.filter(n => n !== deleteId);
+      if (!joinedRooms.includes(room.id)) joinedRooms.push(room.id);
       saveLocalBackup();
-      renderRooms();
-      renderJoinedRooms();
-      const ok = await deleteRoomOnServer(deleteId);
-      if (!ok) showMessage('Failed to delete room on server.', true);
-      return;
     }
-  });
+
+    try { localStorage.setItem("currentRoom", JSON.stringify(room.raw || room)); } catch {}
+    if (!joinedRooms.includes(room.id)) {
+      joinedRooms.push(room.id);
+      saveLocalBackup();
+    }
+    window.location.href = "chat.html";
+    return;
+  }
+
+  if (deleteId) {
+    ev.preventDefault();
+    const existing = rooms.find(r => r.id === deleteId);
+    rooms = rooms.filter(r => r.id !== deleteId);
+    joinedRooms = joinedRooms.filter(n => n !== deleteId);
+    saveLocalBackup();
+    renderRooms();
+    renderJoinedRooms();
+    const ok = await deleteRoomOnServer(deleteId);
+    if (!ok) showMessage('Failed to delete room on server.', true);
+    return;
+  }
+});
+
 
   $("#toggle-create-room-form")?.addEventListener("click", () => {
     const form = $("#create-room-form");
