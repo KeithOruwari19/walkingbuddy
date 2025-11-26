@@ -27,6 +27,7 @@ function dedupeRooms() {
     if (!id) continue;
     if (seen.has(id)) continue;
     seen.add(id);
+    // ensure stored id is string on the room object
     r.id = id;
     out.push(r);
   }
@@ -201,6 +202,7 @@ async function fetchJSON(url, opts = {}) {
 
 async function batchFetchUsers(uids) {
   if (!Array.isArray(uids) || uids.length === 0) return {};
+
   try {
     const body = JSON.stringify(uids);
     const json = await fetchJSON(`${USER_API_BASE}/batch`, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
@@ -458,6 +460,7 @@ async function deleteRoomOnServer(roomId) {
   }
 }
 
+// leaveRoomOnServer (keep same behaviour as before)
 async function leaveRoomOnServer(roomId, userId) {
   try {
     const res = await fetch(`${API_BASE}/leave`, {
@@ -618,7 +621,6 @@ function wireUI() {
     }
     if (leaveId) {
       ev.preventDefault();
-      // optimistic UI: remove join locally immediately (normalize comparisons)
       joinedRooms = joinedRooms.filter(n => normalizeId(n) !== normalizeId(leaveId));
       dedupeJoinedRooms();
       saveLocalBackup();
