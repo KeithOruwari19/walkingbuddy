@@ -3,31 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chat</title>
+  <title>Chat - Laurier Navigator</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <header class="topbar">
-    <div class="logo">Room Chat</div>
-    <nav class="nav-links">
-      <a href="rooms.html">Back to Rooms</a>
-    </nav>
-  </header>
+<header class="topbar">
+  <div class="logo">Room Chat</div>
+  <nav class="nav-links" id="nav-links">
+    <a href="index.html">Navigation</a>
+    <a href="rooms.html">Rooms</a>
 
-  <main class="chat-layout">
+    <span id="auth-links">
+      <a href="login.html">Login</a>
+      <a href="signup.html">Sign Up</a>
+    </span>
 
-    <div class="chat-messages" id="chat-messages"></div>
+    <span id="user-info" style="display:none; align-items:center; gap:10px;">
+      <div id="user-avatar" style="
+        width:32px;height:32px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-size:14px;font-weight:600;color:#fff;
+      "></div>
+      <span id="user-name"></span>
+      <a href="#" id="logout-btn" class="logout-link">Logout</a>
+    </span>
+  </nav>
+</header>
 
-    <div class="chat-input-bar">
-      <input id="chat-input" class="text-input" placeholder="Type a message..." />
-      <button id="chat-send" class="btn primary">Send</button>
-    </div>
+<main class="chat-layout">
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-bar">
+    <input id="chat-input" class="text-input" placeholder="Type a message..." />
+    <button id="chat-send" class="btn primary">Send</button>
+  </div>
+</main>
 
-  </main>
-
-  <script type="module" src="./modules/chat.js"></script>
+<script type="module" src="modules/auth.js"></script>
+<script type="module" src="modules/chat.js"></script>
 
 </body>
 </html>
-
