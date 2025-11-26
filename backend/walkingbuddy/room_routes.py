@@ -142,6 +142,14 @@ async def create_room(req: CreateRoomRequest, request: Request):
         )
 
         try:
+            try:
+                RoomDatabase.join_room(room_id, req.user_id)
+            except Exception as join_exc:
+                logger.info("[rooms.create] join_room for creator raised: %s", join_exc)
+        except Exception:
+            pass
+
+        try:
             session_name = (request.session.get("user_name") or request.session.get("name") or None)
             if session_name:
                 room["creator_name"] = session_name
