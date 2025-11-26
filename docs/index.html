@@ -19,9 +19,9 @@
   let destInput = null;
   let routeInfo = null;
   let navLinks = null;
-
   let map = window.map || null;
   let currentRouteLayer = null;
+  let currentRouteData = null;
 
   function ensureMap() {
     if (map) return map;
@@ -29,16 +29,16 @@
       console.warn('Leaflet not loaded; map features disabled.');
       return null;
     }
-    map = L.map('map').setView([43.4723, -80.5449], 14); 
+    map = L.map('map').setView([43.4723, -80.5449], 14);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
-    window.map = map; 
+    window.map = map;
     return map;
   }
 
   function showRouteInfo(text) {
-    routeInfo.innerHTML = `<p>${text}</p>`;
+    if (routeInfo) routeInfo.innerHTML = `<p>${text}</p>`;
   }
 
   function clearRouteOnMap() {
@@ -59,7 +59,7 @@
     } catch (e) {}
   }
 
-   async function getRoute() {
+  async function getRoute() {
     const start = (startInput && startInput.value ? startInput.value.trim() : "");
     const dest = (destInput && destInput.value ? destInput.value.trim() : "");
     if (!start) { showRouteInfo('Please enter a start address.'); return; }
@@ -82,6 +82,17 @@
         return;
       }
       const route = data.route;
+      // save route for "Create Room"
+      currentRouteData = {
+        start_text: start,
+        dest_text: dest,
+        start_coord: data.start_coord || null,
+        dest_coord: data.dest_coord || null,
+        distance_m: route.distance_m,
+        duration_s: route.duration_s,
+        geometry: route.geometry
+      };
+
       const km = (route.distance_m / 1000).toFixed(2);
       const mins = Math.round(route.duration_s / 60);
       showRouteInfo(`Distance: ${km} km`);
@@ -98,39 +109,39 @@
   }
 
   async function reverseGeocode(lat, lon) {
-  const res = await fetch(
-    `${BACKEND_BASE}/api/navigation/reverse?lat=${lat}&lon=${lon}`,
-    { credentials: "include" }
-  );
+    const res = await fetch(
+      `${BACKEND_BASE}/api/navigation/reverse?lat=${lat}&lon=${lon}`,
+      { credentials: "include" }
+    );
 
-  const data = await res.json();
-  if (!data.success) throw new Error("Failed to reverse geocode");
+    const data = await res.json();
+    if (!data.success) throw new Error("Failed to reverse geocode");
 
-  return data.address;
-}
+    return data.address;
+  }
 
   async function useMyLocation() {
     if (!navigator.geolocation) {
       showRouteInfo('Geolocation not supported by this browser.');
       return;
     }
-    btnUseLocation.disabled = true;
+    if (btnUseLocation) btnUseLocation.disabled = true;
     showRouteInfo('Getting current location…');
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
-      const addr = await reverseGeocode(lat, lon);
-      startInput.value = addr;
+      const addr = await reverseGeocode(lat, lon).catch(()=>`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+      if (startInput) startInput.value = addr;
       showRouteInfo('Start set to your location. Now enter destination and click Get Route.');
-      btnUseLocation.disabled = false;
+      if (btnUseLocation) btnUseLocation.disabled = false;
     }, (err) => {
       console.warn('geolocation error', err);
       showRouteInfo('Could not get location: ' + (err.message || 'permission denied'));
-      btnUseLocation.disabled = false;
+      if (btnUseLocation) btnUseLocation.disabled = false;
     }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 });
   }
 
-   async function checkSessionAndUpdateNav() {
+  async function checkSessionAndUpdateNav() {
     try {
       const res = await fetch(`${BACKEND_BASE}/auth/verify`, {
         method: 'GET',
@@ -146,6 +157,7 @@
       console.warn('session check error', err);
     }
   }
+
   function setLoggedInNav(user) {
     if (!navLinks) return;
     const loginA = navLinks.querySelector('a[href="login.html"]');
@@ -179,7 +191,82 @@
     navLinks.appendChild(logoutA);
   }
 
-window.addEventListener('load', () => {
+  async function createRoom() {
+    if (!currentRouteData) {
+      showRouteInfo("No route available to create a room. Load a route first.");
+      return;
+    }
+
+    if (btnCreateRoom) {
+      btnCreateRoom.disabled = true;
+      btnCreateRoom.textContent = 'Creating room...';
+    }
+
+    const payload = {
+      name: `${currentRouteData.start_text} → ${currentRouteData.dest_text}`,
+      start: currentRouteData.start_coord,
+      destination: currentRouteData.dest_coord,
+      distance_m: currentRouteData.distance_m,
+      duration_s: currentRouteData.duration_s,
+      geometry: currentRouteData.geometry
+    };
+
+    const tryEndpoints = [
+      `${BACKEND_BASE}/rooms`,
+      `${BACKEND_BASE}/rooms/create`,
+      `${BACKEND_BASE}/api/rooms`,
+      `${BACKEND_BASE}/api/rooms/create`,
+      `${BACKEND_BASE}/walkingbuddy/rooms`,
+    ];
+
+    let lastError = null;
+    for (const ep of tryEndpoints) {
+      try {
+        const res = await fetch(ep, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        // treat 200 or 201 as success
+        if (res.ok) {
+          let data = {};
+          try { data = await res.json(); } catch(e){}
+
+          // If server returns a room URL or ID, redirect there
+          if (data.room_url) {
+            window.location.href = data.room_url;
+            return;
+          }
+          if (data.room_id) {
+            // guess a room page path if not provided
+            window.location.href = `${window.location.origin}/rooms.html?room_id=${encodeURIComponent(data.room_id)}`;
+            return;
+          }
+
+          // fallback
+          window.location.href = `${window.location.origin}/rooms.html`;
+          return;
+        } else {
+          lastError = `Endpoint ${ep} returned ${res.status}`;
+          // continue trying other endpoints
+        }
+      } catch (err) {
+        lastError = err;
+        // try next endpoint
+      }
+    }
+
+    // all endpoints failed
+    showRouteInfo(`Failed to create room: ${lastError}`);
+    if (btnCreateRoom) {
+      btnCreateRoom.disabled = false;
+      btnCreateRoom.textContent = 'Create Room';
+    }
+  }
+
+  window.addEventListener('load', () => {
     btnGetRoute = document.getElementById('btn-get-route');
     btnUseLocation = document.getElementById('btn-use-location');
     btnCreateRoom = document.getElementById('btn-create-room');
@@ -190,6 +277,8 @@ window.addEventListener('load', () => {
 
     if (btnGetRoute) btnGetRoute.addEventListener('click', (e)=>{ e.preventDefault(); getRoute(); });
     if (btnUseLocation) btnUseLocation.addEventListener('click', (e)=>{ e.preventDefault(); useMyLocation(); });
+    if (btnCreateRoom) btnCreateRoom.addEventListener('click', (e) => { e.preventDefault(); createRoom(); });
+
     if (destInput) {
       destInput.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') { ev.preventDefault(); getRoute(); }
