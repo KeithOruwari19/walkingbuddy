@@ -123,9 +123,6 @@ async def emit_room_event(event_type: str, room: dict):
 
 @router.post("/create")
 async def create_room(req: CreateRoomRequest, request: Request):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         room_id = str(uuid.uuid4())[:8]
         name = req.room_name or req.name
@@ -134,7 +131,7 @@ async def create_room(req: CreateRoomRequest, request: Request):
 
         room = RoomDatabase.create_room(
             room_id=room_id,
-            creator_id=user_id,
+            creator_id=req.user_id,
             destination=req.destination,
             start_coord=req.start_coord,
             dest_coord=req.dest_coord,
@@ -143,17 +140,27 @@ async def create_room(req: CreateRoomRequest, request: Request):
             meet_time=meet,
             start_location=start_loc
         )
+        try:
+            session_name = (request.session.get("user_name") or request.session.get("name") or None)
+            if session_name:
+                room["creator_name"] = session_name
+        except Exception:
+            pass
+        try:
+            attach_creator_name(room)
+        except Exception:
+            logger.exception("[rooms.create] attach_creator_name failed for %s", room_id)
+        try:
+            await emit_room_event("room:new", room)
+        except Exception:
+            logger.exception("[rooms.create] emit_room_event failed for %s (broadcast error)", room_id)
 
-        RoomDatabase.join_room(room_id, user_id)
-
-        attach_creator_name(room)
-        attach_canonical_ids(room, prefer_room_id=room_id)
-
-        await emit_room_event("room:new", room)
         return {"success": True, "room": room, "message": f"Room {room_id} created."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
         
 @router.get("/list")
