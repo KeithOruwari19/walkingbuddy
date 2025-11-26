@@ -93,7 +93,136 @@
   </div>
 
 </main>
+<script>
+(function(){
+  const API_JOIN = '/api/rooms/join';
 
+  function getUserId() {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || 'null');
+      return u?.id || u?.user_id || u?.email || u?.name || `guest-${Math.floor(Math.random()*100000)}`;
+    } catch { return `guest-${Math.floor(Math.random()*100000)}`; }
+  }
+
+  function extractRoomFromCard(cardEl) {
+    if (!cardEl) return null;
+    const title = cardEl.querySelector('.room-title')?.textContent?.trim() || '';
+    const membersText = cardEl.querySelector('.room-meta p strong')?.parentElement?.textContent || '';
+    const meetP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /meeting|meet/i.test(p.textContent));
+    const startP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /start/i.test(p.textContent));
+    const destP = Array.from(cardEl.querySelectorAll('.room-meta p')).find(p => /destination/i.test(p.textContent));
+    return {
+      id: cardEl.dataset.roomId || cardEl.dataset.id || title,
+      name: title,
+      members: parseInt((membersText.match(/\d+/)||['0'])[0],10) || 0,
+      meetTime: meetP ? meetP.textContent.replace(/Meeting:|Meeting Time:/i,'').trim() : null,
+      startLocation: startP ? startP.textContent.replace(/Start Location:/i,'').trim() : '',
+      destination: destP ? destP.textContent.replace(/Destination:/i,'').trim() : ''
+    };
+  }
+
+  async function serverJoin(roomIdOrName) {
+    const payload = { room_id: roomIdOrName, user_id: getUserId() };
+    try {
+      const res = await fetch(API_JOIN, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const text = await res.text();
+      let j = null;
+      try { j = JSON.parse(text); } catch {}
+      if (!res.ok) {
+        console.warn('join failed', res.status, text);
+        return j?.room || null;
+      }
+      return j?.room || j || null;
+    } catch (e) {
+      console.warn('join network failed', e);
+      return null;
+    }
+  }
+
+  async function doJoinAndEnter(cardEl, navigate = false) {
+    const room = extractRoomFromCard(cardEl);
+    if (!room) { console.warn('no room element'); return; }
+
+    let serverRoom = null;
+    if (room.id) {
+      serverRoom = await serverJoin(room.id);
+    }
+
+    const toStore = serverRoom || room;
+    try { localStorage.setItem('currentRoom', JSON.stringify(toStore)); } catch (e) { console.warn('store failed', e); }
+
+    try {
+      const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
+      if (!joined.includes(toStore.id || toStore.name)) {
+        joined.push(toStore.id || toStore.name);
+        localStorage.setItem('joinedRooms', JSON.stringify(joined));
+      }
+    } catch (e) {}
+
+    if (navigate) window.location.href = 'chat.html';
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target;
+
+    const joinId = t?.dataset?.join;
+    const enterId = t?.dataset?.enter;
+    if (joinId) {
+      ev.preventDefault();
+      const card = t.closest('.room-card') || document.querySelector(`.room-card[data-room-id="${joinId}"]`);
+      await doJoinAndEnter(card, true);
+      return;
+    }
+    if (enterId) {
+      ev.preventDefault();
+      const card = t.closest('.room-card') || document.querySelector(`.room-card[data-room-id="${enterId}"]`);
+      const room = extractRoomFromCard(card);
+      if (room) {
+        localStorage.setItem('currentRoom', JSON.stringify(room));
+        const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
+        if (!joined.includes(room.id || room.name)) {
+          joined.push(room.id || room.name);
+          localStorage.setItem('joinedRooms', JSON.stringify(joined));
+        }
+      }
+      window.location.href = 'chat.html';
+      return;
+    }
+
+    if (t.tagName === 'BUTTON' || t.tagName === 'A') {
+      const onclick = t.getAttribute && t.getAttribute('onclick');
+      if (onclick && /joinRoom\(['"](.+?)['"]\)/.test(onclick)) {
+        ev.preventDefault();
+        const name = onclick.match(/joinRoom\(['"](.+?)['"]\)/)[1];
+        const card = Array.from(document.querySelectorAll('.room-card')).find(c => (c.querySelector('.room-title')?.textContent||'').trim() === name);
+        await doJoinAndEnter(card, true);
+        return;
+      }
+      if (onclick && /enterRoom\(['"](.+?)['"]\)/.test(onclick)) {
+        ev.preventDefault();
+        const name = onclick.match(/enterRoom\(['"](.+?)['"]\)/)[1];
+        const card = Array.from(document.querySelectorAll('.room-card')).find(c => (c.querySelector('.room-title')?.textContent||'').trim() === name);
+        if (card) {
+          const room = extractRoomFromCard(card);
+          localStorage.setItem('currentRoom', JSON.stringify(room));
+          const joined = JSON.parse(localStorage.getItem('joinedRooms') || '[]');
+          if (!joined.includes(room.id || room.name)) {
+            joined.push(room.id || room.name);
+            localStorage.setItem('joinedRooms', JSON.stringify(joined));
+          }
+        }
+        window.location.href = 'chat.html';
+        return;
+      }
+    }
+  }, { capture: false });
+})();
+</script>
 <script type="module" src="./modules/rooms.js"></script>
   
 </body>
