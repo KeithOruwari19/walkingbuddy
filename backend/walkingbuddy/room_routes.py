@@ -9,13 +9,38 @@ This file handles all the room-related operations which include:
 - Updating room status
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from  pydantic import BaseModel
 from typing import List
 import uuid
+import asyncio
 from .database import RoomDatabase
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        try:
+            self.active_connections.remove(websocket)
+        except ValueError:
+            pass
+
+    async def broadcast(self, message: dict):
+        """Send a JSON-serializable message to all connected clients."""
+        if not self.active_connections:
+            return
+        text = json.dumps(message)
+        coros = [ws.send_text(text) for ws in list(self.active_connections)]
+        await asyncio.gather(*coros, return_exceptions=True)
+
+manager = ConnectionManager()
 
 class CreateRoomRequest(BaseModel):
   user_id: str
@@ -36,6 +61,10 @@ class UpdateRoomStatusRequest(BaseModel):
   room_id: str
   status: str
 
+async def emit_room_event(event_type: str, room: dict):
+    payload = {"type": event_type, "room": room}
+    await manager.broadcast(payload)
+
 @router.post("/create")
 def create_room(req: CreateRoomRequest):
   try:
@@ -48,6 +77,7 @@ def create_room(req: CreateRoomRequest):
       dest_coord =  req.dest_coord,
       max_members = req.max_members
     )
+    await emit_room_event("room:new", room)
     return {
       "success": True, 
       "room": room, 
@@ -65,6 +95,7 @@ def list_rooms():
 def join_room(req: JoinRoomRequest):
   try: 
     room = RoomDatabase.join_room(req.room_id, req.user_id)
+    await emit_room_event("room:join", room)
 
     return {
       "success": True,
@@ -105,3 +136,14 @@ def update_room_status(req: UpdateRoomStatusRequest):
     }
   except ValueError as e:
     raise HTTPException(status_code=404, detail=str(e))
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
