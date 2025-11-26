@@ -1,101 +1,203 @@
-const BACKEND_BASE = "https://cp317-group-18-project-onrender.com";
+const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
 
 const room = JSON.parse(localStorage.getItem("currentRoom") || "null");
 if (!room || !room.id) {
   window.location.href = "rooms.html";
 }
 
-const user = JSON.parse(localStorage.getItem("user") || "null") || {};
+const rawUser = JSON.parse(localStorage.getItem("user") || "null") || {};
+const currentUser = {
+  id: rawUser.user_id || rawUser.id || rawUser.userId || rawUser.email || null,
+  name: rawUser.name || rawUser.full_name || rawUser.displayName || rawUser.email || "You",
+  email: rawUser.email || ""
+};
 
 const messagesContainer = document.getElementById("chat-messages");
 const input = document.getElementById("chat-input");
 const sendBtn = document.getElementById("chat-send");
 
-function getInitials(name, email) {
-  if (name) {
-    const parts = name.trim().split(" ");
-    if (parts.length === 1) return parts[0][0].toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function getInitials(name, email){
+  if(name && typeof name === "string"){
+    const parts = name.trim().split(/\s+/);
+    if(parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+    return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
   }
-  return email ? email[0].toUpperCase() : "?";
+  if(email && typeof email === "string") return email[0].toUpperCase();
+  return "??";
+}
+function colorFromString(str){
+  if(!str) return "#3949ab";
+  let h=0;
+  for(let i=0;i<str.length;i++) h = str.charCodeAt(i) + ((h<<5)-h);
+  const hue = Math.abs(h % 360);
+  return `hsl(${hue},65%,55%)`;
 }
 
-function colorFromString(str) {
-  if (!str) return "#3949ab";
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash % 360);
-  return `hsl(${hue}, 65%, 55%)`;
-}
+function renderSingleMessage(m){
+  const content = m.content ?? m.text ?? m.message ?? "";
+  const user_id = m.user_id ?? m.userId ?? m.user ?? null;
+  const authorName = m.user_name ?? m.name ?? m.author ?? (user_id && String(user_id) === String(currentUser.id) ? currentUser.name : "Unknown");
+  const authorEmail = m.user_email ?? m.email ?? null;
+  const ts = m.ts ?? m.timestamp ?? m.created_at ?? m.time ?? null;
 
-function appendMessage(text, self = false) {
+  const isSelf = user_id && currentUser.id && String(user_id) === String(currentUser.id);
+
   const wrapper = document.createElement("div");
-  wrapper.classList.add("message-wrapper");
-  if (self) wrapper.classList.add("self");
+  wrapper.className = "message-wrapper" + (isSelf ? " self" : "");
 
   const avatar = document.createElement("div");
-  avatar.classList.add("chat-avatar");
+  avatar.className = "chat-avatar";
+  avatar.textContent = getInitials(authorName, authorEmail);
+  avatar.style.backgroundColor = colorFromString(authorEmail || authorName || "");
 
-  const initials = getInitials(user.name, user.email);
-  avatar.textContent = initials;
-  avatar.style.backgroundColor = colorFromString(user.email || user.name || "");
-
-  wrapper.appendChild(avatar);
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.innerHTML = `<strong>${escapeHtml(authorName || (isSelf ? currentUser.name : "Unknown"))}</strong>` + (ts ? ` <span class="chat-ts">${escapeHtml(new Date(ts).toLocaleTimeString())}</span>` : "");
 
   const bubble = document.createElement("div");
-  bubble.classList.add("message-bubble");
-  bubble.textContent = text;
+  bubble.className = "message-bubble";
+  bubble.textContent = content;
 
-  wrapper.appendChild(bubble);
-  messagesContainer.appendChild(wrapper);
+  wrapper.appendChild(avatar);
+  const textWrap = document.createElement("div");
+  textWrap.appendChild(meta);
+  textWrap.appendChild(bubble);
+  wrapper.appendChild(textWrap);
+
+  return wrapper;
+}
+
+function renderMessagesList(list){
+  if(!messagesContainer) return;
+  messagesContainer.innerHTML = "";
+  if(!Array.isArray(list) || list.length === 0){
+    messagesContainer.innerHTML = `<p style="color:#777;margin:8px 12px;">No messages yet.</p>`;
+    return;
+  }
+  for(const m of list){
+    const el = renderSingleMessage(m);
+    messagesContainer.appendChild(el);
+  }
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-async function loadMessages() {
+async function loadMessages(){
+  if(!room || !room.id) return;
   try {
-    const res = await fetch(`${BACKEND_BASE}/api/chat/${room.id}/messages`, {
+    const res = await fetch(`${BACKEND_BASE}/api/chat/${encodeURIComponent(room.id)}/messages?limit=200`, {
+      method: "GET",
       credentials: "include"
     });
-    const data = await res.json();
-
-    messagesContainer.innerHTML = "";
-
-    if (Array.isArray(data.messages)) {
-      data.messages.forEach(m => {
-        appendMessage(m.content, m.user_id === user.id);
-      });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>"");
+      console.warn("[chat] loadMessages failed", res.status, txt);
+      return;
     }
-  } catch (e) {}
+    const j = await res.json();
+    const msgs = Array.isArray(j.messages) ? j.messages : (Array.isArray(j) ? j : []);
+    renderMessagesList(msgs);
+  } catch (e) {
+    console.warn("[chat] loadMessages exception", e);
+  }
 }
 
-async function sendMessage() {
-  const text = input.value.trim();
-  if (!text) return;
+let sending = false;
+
+async function sendMessage(){
+  if(sending) return;
+  const text = (input.value || "").trim();
+  if(!text) return;
+  if(!currentUser.id){
+    alert("You must be logged in to send messages.");
+    return;
+  }
+
+  sending = true;
+  sendBtn.disabled = true;
+
+  const payload = { room_id: room.id, user_id: currentUser.id, content: text };
 
   try {
-    await fetch(`${BACKEND_BASE}/api/chat/send`, {
+    const res = await fetch(`${BACKEND_BASE}/api/chat/send`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        room_id: room.id,
-        user_id: user.id,
-        content: text        // FIXED
-      })
+      body: JSON.stringify(payload)
     });
 
-    input.value = "";
+    if(!res.ok){
+      const body = await res.text().catch(()=>"");
+      console.warn("[chat] send failed", res.status, body);
+      if(res.status === 403){
+        try {
+          const jres = await fetch(`${BACKEND_BASE}/api/rooms/join`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ room_id: room.id, user_id: currentUser.id })
+          });
+          if(jres.ok){
+            console.info("[chat] joined room automatically, retrying send");
+            const retry = await fetch(`${BACKEND_BASE}/api/chat/send`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            if(retry.ok){
+              await loadMessages();
+              input.value = "";
+              input.focus();
+              sending = false;
+              sendBtn.disabled = false;
+              return;
+            }
+          }
+        } catch(err){
+          console.warn("[chat] auto-join failed", err);
+        }
+      }
+      alert("Failed to send message — check console for details.");
+      sending = false;
+      sendBtn.disabled = false;
+      return;
+    }
+
+    const json = await res.json().catch(()=>null);
     await loadMessages();
-  } catch (e) {}
+    input.value = "";
+    input.focus();
+  } catch (e) {
+    console.warn("[chat] sendMessage exception", e);
+    alert("Network error sending message (see console).");
+  } finally {
+    sending = false;
+    sendBtn.disabled = false;
+  }
 }
 
-sendBtn.addEventListener("click", sendMessage);
-input.addEventListener("keypress", e => {
-  if (e.key === "Enter") sendMessage();
-});
+function wireUI(){
+  sendBtn.addEventListener("click", (ev) => { ev.preventDefault(); sendMessage(); });
+  input.addEventListener("keydown", (ev) => {
+    if(ev.key === "Enter" && !ev.shiftKey){
+      ev.preventDefault();
+      sendMessage();
+    }
+  });
+}
 
-loadMessages();
-setInterval(loadMessages, 1500);
-    
+(function init(){
+  const userNameEl = document.getElementById("user-name");
+  const avatarEl = document.getElementById("user-avatar");
+  if(userNameEl) userNameEl.textContent = currentUser.name;
+  if(avatarEl){
+    avatarEl.textContent = getInitials(currentUser.name, currentUser.email);
+    avatarEl.style.backgroundColor = colorFromString(currentUser.email || currentUser.name || "");
+  }
+
+  wireUI();
+  loadMessages();
+  setInterval(loadMessages, 1500);
+})();
