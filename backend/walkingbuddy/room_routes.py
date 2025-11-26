@@ -9,7 +9,7 @@ This file handles all the room-related operations which include:
 - Updating room status
 """
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel
 from typing import List
 import uuid
@@ -123,7 +123,15 @@ async def leave_room(req: LeaveRoomRequest):
             raise HTTPException(status_code=400, detail=str(e))
             
 @router.delete("/{room_id}")
-async def delete_room(room_id: str):
+async def delete_room(room_id: str, request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    room = RoomDatabase.get_room(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room {room_id} not found")
+    if room.get("creator_id") != user_id:
+        raise HTTPException(status_code=403, detail="Only the room creator may delete this room")
     try:
         removed = RoomDatabase.delete_room(room_id)
         await emit_room_event("room:delete", {"room_id": room_id})
