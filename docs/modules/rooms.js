@@ -1,4 +1,4 @@
-const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
+const BACKEND_HOST = "https://cp317-group-18-project-onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
@@ -52,10 +52,12 @@ function normalizeRoom(r) {
     r.time ||
     null;
 
-  const canonicalId = String(r.room_id || r.id || r.uuid || r.roomId || (r.raw && (r.raw.room_id || r.raw.id)) || Date.now());
+
+  const canonicalIdRaw = (r.room_id || r.id || r.uuid || r.roomId || (r.raw && (r.raw.room_id || r.raw.id)));
+  const canonicalId = canonicalIdRaw ? String(canonicalIdRaw) : "";
 
   return {
-    id: canonicalId,
+    id: canonicalId || `temp:${String(r.name||r.destination||Date.now())}`, 
     name: r.name || r.room_name || r.destination || r.title || `Room ${r.room_id || r.id || ''}`,
     members: Array.isArray(r.members) ? r.members.length : (r.members ?? (Array.isArray(r.users) ? r.users.length : (r.count ?? 0))),
     meetTime: meet,
@@ -65,6 +67,32 @@ function normalizeRoom(r) {
     creatorName: creatorName,
     raw: r
   };
+}
+
+function roomKey(roomLike) {
+  if (!roomLike) return "";
+  const r = roomLike.raw || roomLike;
+  const candidates = [
+    r.room_id, r.id, r.uuid, r.roomId,
+    (r.raw && (r.raw && (r.raw.room_id || r.raw.id))) 
+  ];
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && String(c) !== "") return String(c);
+  }
+  const name = roomLike.name || r.name || r.room_name || r.destination || "";
+  const creator = (r.creator_id || r.creator || r.creatorId || r.user_id || "") ;
+  const mt = roomLike.meetTime || r.meetTime || r.meet_time || "";
+  const composite = `${String(name)}|${String(creator)}|${String(mt)}`;
+  return composite ? `composite:${hashString(composite)}` : "";
+}
+
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
+  }
+  return String(Math.abs(h));
 }
 
 function showMessage(text, err=false) {
