@@ -1,4 +1,4 @@
-const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
+const BACKEND_HOST = "https://cp317-group-18-project-onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
@@ -52,8 +52,10 @@ function normalizeRoom(r) {
     r.time ||
     null;
 
+  const canonicalId = String(r.room_id || r.id || r.uuid || r.roomId || (r.raw && (r.raw.room_id || r.raw.id)) || Date.now());
+
   return {
-    id: r.room_id || r.id || r.uuid || r.roomId || String(r.id || r.room_id || Date.now()),
+    id: canonicalId,
     name: r.name || r.room_name || r.destination || r.title || `Room ${r.room_id || r.id || ''}`,
     members: Array.isArray(r.members) ? r.members.length : (r.members ?? (Array.isArray(r.users) ? r.users.length : (r.count ?? 0))),
     meetTime: meet,
@@ -84,7 +86,7 @@ function renderJoinedRooms() {
   }
   const currentUserId = getCurrentUserId();
   joinedRooms.forEach(roomId => {
-    const room = rooms.find(r => (r.id === roomId || r.name === roomId));
+    const room = rooms.find(r => String(r.id) === String(roomId) || String(r.name) === String(roomId));
     if (!room) return;
     const div = document.createElement("div");
     div.classList.add("room-card");
@@ -144,6 +146,8 @@ function loadLocalBackup() {
   } catch (e) {
     rooms = []; joinedRooms = [];
   }
+  dedupeRooms();
+  dedupeJoinedRooms();
   renderJoinedRooms();
   renderRooms();
 }
@@ -153,6 +157,36 @@ function saveLocalBackup() {
     localStorage.setItem("rooms", JSON.stringify(rooms.map(r=>r.raw || r)));
     localStorage.setItem("joinedRooms", JSON.stringify(joinedRooms));
   } catch (e) {}
+}
+
+function dedupeRooms() {
+  const seen = new Set();
+  const out = [];
+  for (const r of rooms) {
+    const id = String(r.id || "");
+    if (!id) continue;
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(r);
+    }
+  }
+  rooms = out;
+}
+
+function dedupeJoinedRooms() {
+  joinedRooms = Array.from(new Set((joinedRooms || []).map(x => String(x))));
+}
+
+function upsertRoom(r) {
+  if (!r) return;
+  const normalized = normalizeRoom(r);
+  const idx = rooms.findIndex(x => String(x.id) === String(normalized.id));
+  if (idx >= 0) {
+    rooms[idx] = normalized;
+  } else {
+    rooms.unshift(normalized);
+  }
+  dedupeRooms();
 }
 
 async function fetchRoomsFromServer() {
@@ -169,6 +203,7 @@ async function fetchRoomsFromServer() {
       }
     });
     rooms = serverRooms;
+    dedupeRooms();
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -203,20 +238,16 @@ async function createRoomOnServer(roomPayload) {
     try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
 
     if (!res.ok) {
-      // If server returned a room object in non-OK body, tolerate it
       const possible = j && (j.room || j) ? (j.room || j) : null;
       if (possible && (possible.room_id || possible.id)) {
-        const created = normalizeRoom(possible);
-        if ((!created.creatorName || created.creatorName === null) && created.creatorId && getCurrentUserId() && String(created.creatorId) === String(getCurrentUserId())) {
-          created.creatorName = getCurrentUserName();
-        }
-        if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
-        if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+        upsertRoom(possible);
+        if (!joinedRooms.includes(String(possible.room_id || possible.id))) joinedRooms.push(String(possible.room_id || possible.id));
+        dedupeJoinedRooms();
         saveLocalBackup();
         renderJoinedRooms();
         renderRooms();
-        try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
-        return created;
+        try { localStorage.setItem("currentRoom", JSON.stringify((possible.raw || possible))); } catch {}
+        return normalizeRoom(possible);
       }
       const errText = text || `${res.status} ${res.statusText}`;
       showMessage("Failed to create room on server.", true);
@@ -229,22 +260,17 @@ async function createRoomOnServer(roomPayload) {
       throw new Error("Server did not return created room");
     }
 
-    const created = normalizeRoom(roomObj);
-    if ((!created.creatorName || created.creatorName === null) && created.creatorId && getCurrentUserId() && String(created.creatorId) === String(getCurrentUserId())) {
-      created.creatorName = getCurrentUserName();
-    }
-
-    if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
-    if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+    upsertRoom(roomObj);
+    if (!joinedRooms.includes(String(roomObj.room_id || roomObj.id))) joinedRooms.push(String(roomObj.room_id || roomObj.id));
+    dedupeJoinedRooms();
 
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
-    try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
-    return created;
+    try { localStorage.setItem("currentRoom", JSON.stringify(roomObj.raw || roomObj)); } catch {}
+    return normalizeRoom(roomObj);
   } catch (e) {
     console.warn("createRoomOnServer error:", e);
-    // showMessage already called above for user-friendly error in most cases
     return null;
   } finally {
     if (createBtn) createBtn.disabled = false;
@@ -265,8 +291,10 @@ async function joinRoomOnServer(roomId, userId) {
     }
     const j = await res.json();
     const updated = normalizeRoom(j.room || j);
-    rooms = rooms.map(r => r.id === updated.id ? updated : r);
-    if (!joinedRooms.includes(updated.id)) joinedRooms.push(updated.id);
+    // replace existing or insert
+    upsertRoom(updated.raw || updated);
+    if (!joinedRooms.includes(String(updated.id))) joinedRooms.push(String(updated.id));
+    dedupeJoinedRooms();
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -297,8 +325,10 @@ async function deleteRoomOnServer(roomId) {
       return false;
     }
 
-    rooms = rooms.filter(r => r.id !== roomId);
-    joinedRooms = joinedRooms.filter(n => n !== roomId && n !== String(roomId));
+    rooms = rooms.filter(r => String(r.id) !== String(roomId));
+    joinedRooms = joinedRooms.filter(n => String(n) !== String(roomId));
+    dedupeRooms();
+    dedupeJoinedRooms();
     saveLocalBackup();
     renderRooms();
     renderJoinedRooms();
@@ -327,22 +357,28 @@ function connectRoomsSocket() {
       console.log("rooms socket message", data);
       if (data.type === "room:new") {
         const r = normalizeRoom(data.room || data);
-        if ((!r.creatorName || r.creatorName === null) && r.creatorId && getCurrentUserId() && String(r.creatorId) === String(getCurrentUserId())) {
-          r.creatorName = getCurrentUserName();
-        }
-        if (!rooms.find(x => x.id === r.id)) rooms.unshift(r);
+        // update-or-insert
+        upsertRoom(r.raw || r);
         saveLocalBackup();
         renderRooms();
       } else if (data.type === "room:delete") {
-        const deletedId = (data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room;
-        rooms = rooms.filter(x => x.id !== deletedId);
-        joinedRooms = joinedRooms.filter(n => n !== deletedId && n !== String(deletedId));
+        const deletedId = String((data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room);
+        rooms = rooms.filter(x => String(x.id) !== deletedId);
+        joinedRooms = joinedRooms.filter(n => String(n) !== deletedId && n !== String(deletedId));
+        dedupeRooms();
+        dedupeJoinedRooms();
         saveLocalBackup();
         renderRooms();
         renderJoinedRooms();
       } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
-        rooms = rooms.map(x => x.id === r.id ? r : x);
+        upsertRoom(r.raw || r);
+        if (data.type === "room:join") {
+          if (!joinedRooms.includes(String(r.id))) joinedRooms.push(String(r.id));
+        } else if (data.type === "room:leave") {
+          joinedRooms = joinedRooms.filter(n => String(n) !== String(r.id));
+        }
+        dedupeJoinedRooms();
         saveLocalBackup();
         renderRooms();
         renderJoinedRooms();
@@ -383,7 +419,6 @@ function wireUI() {
     const created = await createRoomOnServer(payload);
     if (created) {
       showMessage("Room created.");
-      // still call join on server to ensure membership record — createRoomOnServer already marks joined locally
       await joinRoomOnServer(created.id, getCurrentUserId());
     } else {
       showMessage("Room creation failed.", true);
@@ -401,11 +436,12 @@ function wireUI() {
     }
     if (enterId) {
       ev.preventDefault();
-      const room = rooms.find(r => r.id === enterId);
+      const room = rooms.find(r => String(r.id) === String(enterId));
       if (room) {
         localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
-        if (!joinedRooms.includes(room.id)) {
-          joinedRooms.push(room.id);
+        if (!joinedRooms.includes(String(room.id))) {
+          joinedRooms.push(String(room.id));
+          dedupeJoinedRooms();
           saveLocalBackup();
         }
         window.location.href = "chat.html";
@@ -414,8 +450,10 @@ function wireUI() {
     }
     if (deleteId) {
       ev.preventDefault();
-      rooms = rooms.filter(r => r.id !== deleteId);
-      joinedRooms = joinedRooms.filter(n => n !== deleteId);
+      rooms = rooms.filter(r => String(r.id) !== String(deleteId));
+      joinedRooms = joinedRooms.filter(n => String(n) !== String(deleteId));
+      dedupeRooms();
+      dedupeJoinedRooms();
       saveLocalBackup();
       renderRooms();
       renderJoinedRooms();
