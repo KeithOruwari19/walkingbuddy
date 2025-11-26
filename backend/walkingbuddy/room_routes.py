@@ -15,6 +15,7 @@ from typing import List, Optional
 import uuid
 import asyncio
 import json
+from backend.auth import auth_storage
 
 from .database import RoomDatabase
 
@@ -68,7 +69,29 @@ class UpdateRoomStatusRequest(BaseModel):
     room_id: str
     status: str
 
+def attach_creator_name(room: dict) -> dict:
+    """
+    Mutates (and returns) room dict to include 'creator_name' if possible.
+    Uses auth_storage.get_user_by_id(...) which returns minimal public user info.
+    """
+    if not isinstance(room, dict):
+        return room
+    creator_id = room.get("creator_id") or room.get("creatorId") or room.get("creator") or room.get("user_id")
+    if not creator_id:
+        room["creator_name"] = room.get("creator_name") or None
+        return room
+    try:
+        user = auth_storage.get_user_by_id(str(creator_id))
+    except Exception:
+        user = None
+    if user:
+        room["creator_name"] = user.get("name")
+    else:
+        room["creator_name"] = room.get("creator_name") or None
+    return room
+
 async def emit_room_event(event_type: str, room: dict):
+    attach_creator_name(room)
     payload = {"type": event_type, "room": room}
     await manager.broadcast(payload)
 
@@ -99,6 +122,8 @@ async def create_room(req: CreateRoomRequest, request: Request):
         except Exception:
             pass
 
+        attach_creator_name(room)
+
         await emit_room_event("room:new", room)
         return {"success": True, "room": room, "message": f"Room {room_id} created."}
     except ValueError as e:
@@ -111,13 +136,14 @@ async def create_room(req: CreateRoomRequest, request: Request):
 @router.get("/list")
 def list_rooms():
     rooms = RoomDatabase.get_active_rooms()
-    return {"success": True, "rooms": rooms}
+    enriched = [attach_creator_name(dict(r)) for r in rooms]
+    return {"success": True, "rooms": enriched}
 
 @router.post("/join")
 async def join_room(req: JoinRoomRequest):
     try:
         room = RoomDatabase.join_room(req.room_id, req.user_id)
-        # broadcast join event
+        attach_creator_name(room)
         await emit_room_event("room:join", room)
         return {
             "success": True,
@@ -134,6 +160,7 @@ async def join_room(req: JoinRoomRequest):
 async def leave_room(req: LeaveRoomRequest):
     try:
         room = RoomDatabase.leave_room(req.room_id, req.user_id)
+        attach_creator_name(room)
         await emit_room_event("room:leave", room)
         return {
             "success": True,
@@ -172,6 +199,7 @@ async def delete_room(room_id: str, request: Request):
 async def update_room_status(req: UpdateRoomStatusRequest):
     try:
         room = RoomDatabase.update_room_status(req.room_id, req.status)
+        attach_creator_name(room)
         await emit_room_event("room:update", room)
         return {
             "success": True,
