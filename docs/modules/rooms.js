@@ -1,4 +1,4 @@
-const BACKEND_HOST = "https://cp317-group-18-project.onrender.com"; 
+const BACKEND_HOST = "https://cp317-group-18-project-onrender.com"; 
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
 const WS_URL =
   `${BACKEND_HOST}`.startsWith("https")
@@ -46,6 +46,29 @@ window.addEventListener("auth:update", (e) => {
   }
 });
 
+(function ensureAuthForRoomsPage() {
+  const stored = getStoredUser && getStoredUser();
+  if (!stored) {
+    window.location.href = "login.html";
+    return;
+  }
+  try {
+    window.dispatchEvent(new CustomEvent("auth:update", { detail: stored }));
+  } catch (e) {
+    if (typeof window.__authRefresh === "function") window.__authRefresh();
+  }
+
+  document.addEventListener("click", (ev) => {
+    const a = ev.target.closest && ev.target.closest('a[href$="rooms.html"], a[href$="/rooms.html"]');
+    if (!a) return;
+    const s = getStoredUser && getStoredUser();
+    if (!s) {
+      ev.preventDefault();
+      window.location.href = "login.html";
+    }
+  });
+})();
+
 function normalizeRoom(r) {
   r = r || {};
   const creatorId = r.creator_id || r.creator || r.creatorId || r.owner || r.user_id || (r.creator && (r.creator.id || r.creator.user_id));
@@ -84,6 +107,42 @@ function showMessage(text, err=false) {
 
 function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+function shortId(id) {
+  if (!id) return "Unknown";
+  if (typeof id !== "string") id = String(id);
+  return id.length > 10 ? id.slice(0, 8) + "…" : id;
+}
+
+function formatCreator(room) {
+  return room.creatorName || room.creator_name || room.creatorId || room.creator || shortId(room.creatorId);
+}
+
+function formatMembersList(room) {
+  const currentUserId = getCurrentUserId();
+  const raw = room.raw || {};
+  const memberNames = raw.member_names || raw.memberNames || raw.members_names || raw.membersNames;
+  if (Array.isArray(memberNames) && memberNames.length) {
+    return memberNames.map(n => String(n) === String(currentUserId) ? "You" : escapeHtml(n)).join(", ");
+  }
+
+  const membersArr = raw.members || raw.users || room.members;
+  if (Array.isArray(membersArr) && membersArr.length) {
+    return membersArr.map(m => {
+      if (m && typeof m === "object") {
+        if (m.name) return String(m.name) === String(currentUserId) ? "You" : escapeHtml(m.name);
+        if (m.displayName) return String(m.displayName) === String(currentUserId) ? "You" : escapeHtml(m.displayName);
+        const id = m.user_id || m.id || m.userId;
+        if (id) return String(id) === String(currentUserId) ? "You" : escapeHtml(shortId(id));
+      }
+      return String(m) === String(currentUserId) ? "You" : escapeHtml(shortId(m));
+    }).join(", ");
+  }
+
+  if (typeof room.members === "number") return String(room.members);
+  if (Array.isArray(room.members)) return String(room.members.length);
+  return "0";
+}
+
 function renderJoinedRooms() {
   const container = $("#joined-rooms-list");
   if (!container) return;
@@ -99,11 +158,14 @@ function renderJoinedRooms() {
     const div = document.createElement("div");
     div.classList.add("room-card");
     div.dataset.roomId = room.id;
+    const creatorDisplay = escapeHtml(formatCreator(room));
+    const membersDisplay = formatMembersList(room); 
     div.innerHTML = `
       <h3 class="room-title">${escapeHtml(room.name)}</h3>
       <div class="room-meta">
         <p><strong>Meeting:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
-        <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
+        <p><strong>Creator:</strong> ${creatorDisplay}</p>
+        <p><strong>Members:</strong> ${membersDisplay}</p>
       </div>
       <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
       ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
@@ -129,14 +191,16 @@ function renderRooms() {
     div.classList.add("room-card");
     div.dataset.roomId = room.id;
     const isCreator = room.creatorId && currentUserId && String(room.creatorId) === String(currentUserId);
+    const creatorDisplay = escapeHtml(formatCreator(room));
+    const membersDisplay = formatMembersList(room);
     div.innerHTML = `
       <h3 class="room-title">${escapeHtml(room.name)}</h3>
       <div class="room-meta">
-        <p><strong>Members:</strong> ${room.members ?? 0}</p>
+        <p><strong>Members:</strong> ${membersDisplay}</p>
         <p><strong>Meeting Time:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
         <p><strong>Start Location:</strong> ${escapeHtml(room.startLocation || "")}</p>
         <p><strong>Destination:</strong> ${escapeHtml(room.destination || "")}</p>
-        <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
+        <p><strong>Creator:</strong> ${creatorDisplay}</p>
       </div>
       <div class="room-actions">
         <button class="btn secondary" data-join="${room.id}">Join Room</button>
@@ -475,3 +539,4 @@ function isValidMeetTime(raw) {
   renderJoinedRooms();
   renderRooms();
 })();
+
