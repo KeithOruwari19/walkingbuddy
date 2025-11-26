@@ -15,11 +15,8 @@ function getStoredUser() {
     const raw = localStorage.getItem("user");
     if (!raw || raw === "null") return null;
     return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
-
 function getCurrentUserId() {
   const u = getStoredUser();
   if (!u) return null;
@@ -30,7 +27,6 @@ function getCurrentUserName() {
   if (!u) return null;
   return u.name || u.full_name || u.displayName || u.email || null;
 }
-
 function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function normalizeRoom(r) {
@@ -53,7 +49,8 @@ function normalizeRoom(r) {
     r.time ||
     null;
 
-  const rawId = r.room_id || r.id || r.uuid || r.roomId || (r.id ?? null);
+  const rawId = (r.room_id ?? r.id ?? r.uuid ?? r.roomId ?? (r.raw && (r.raw.room_id ?? r.raw.id ?? r.raw.uuid))) ?? null;
+
   const canonicalId = rawId != null ? String(rawId) : `local-${Date.now()}`;
 
   return {
@@ -118,7 +115,7 @@ function renderRooms() {
   if (empty) empty.style.display = "none";
   list.innerHTML = "";
   const currentUserId = getCurrentUserId();
-  rooms.forEach(room => {
+  for (const room of rooms) {
     const div = document.createElement("div");
     div.classList.add("room-card");
     div.dataset.roomId = room.id;
@@ -138,13 +135,14 @@ function renderRooms() {
       </div>
     `;
     list.appendChild(div);
-  });
+  }
 }
 
 function loadLocalBackup() {
   try {
-    rooms = JSON.parse(localStorage.getItem("rooms") || "[]").map(normalizeRoom);
-    joinedRooms = JSON.parse(localStorage.getItem("joinedRooms") || "[]");
+    const rawRooms = JSON.parse(localStorage.getItem("rooms") || "[]");
+    rooms = (rawRooms || []).map(normalizeRoom);
+    joinedRooms = JSON.parse(localStorage.getItem("joinedRooms") || "[]") || [];
   } catch (e) {
     rooms = []; joinedRooms = [];
   }
@@ -152,7 +150,6 @@ function loadLocalBackup() {
   renderJoinedRooms();
   renderRooms();
 }
-
 function saveLocalBackup() {
   try {
     localStorage.setItem("rooms", JSON.stringify(rooms.map(r=>r.raw || r)));
@@ -160,67 +157,43 @@ function saveLocalBackup() {
   } catch (e) {}
 }
 
-
 function normalizeId(id) {
   if (id === null || id === undefined) return null;
   return String(id);
 }
-
 function roomMatches(a, b) {
   if (!a || !b) return false;
   const aid = normalizeId(a.id);
   const bid = normalizeId(b.id);
   if (aid && bid && aid === bid) return true;
-
   const aRaw = a.raw || {};
   const bRaw = b.raw || {};
   const aRoomId = normalizeId(aRaw.room_id || aRaw.id || aRaw.uuid);
   const bRoomId = normalizeId(bRaw.room_id || bRaw.id || bRaw.uuid);
   if (aRoomId && bRoomId && aRoomId === bRoomId) return true;
-
   const aSig = `${normalizeId(a.name)}|${normalizeId(a.creatorId)}`;
   const bSig = `${normalizeId(b.name)}|${normalizeId(b.creatorId)}`;
   if (aSig && bSig && aSig === bSig) return true;
-
   return false;
 }
-
 function ensureRoomInserted(newRoom, { toTop = false } = {}) {
   if (!newRoom || !newRoom.id) return;
   const out = [];
   let seen = false;
   for (const r of rooms) {
     if (roomMatches(r, newRoom)) {
-      if (!seen) {
-        out.push(newRoom);
-        seen = true;
-      } else {
-      }
-    } else {
-      out.push(r);
-    }
+      if (!seen) { out.push(newRoom); seen = true; }
+    } else out.push(r);
   }
-  if (!seen) {
-    if (toTop) out.unshift(newRoom);
-    else out.push(newRoom);
-  } else if (toTop) {
+  if (!seen) { if (toTop) out.unshift(newRoom); else out.push(newRoom); }
+  else if (toTop) {
     const idx = out.findIndex(x => roomMatches(x, newRoom));
-    if (idx > 0) {
-      const [item] = out.splice(idx, 1);
-      out.unshift(item);
-    }
+    if (idx > 0) out.unshift(out.splice(idx,1)[0]);
   }
   rooms = out;
   joinedRooms = Array.from(new Set((joinedRooms || []).map(normalizeId).filter(x => x !== null)));
   saveLocalBackup();
 }
-
-function removeRoomById(roomId) {
-  const nid = normalizeId(roomId);
-  rooms = rooms.filter(r => normalizeId(r.id) !== nid && normalizeId((r.raw||{}).room_id) !== nid);
-  saveLocalBackup();
-}
-
 function dedupeRoomsAndJoined() {
   const out = [];
   for (const r of rooms) {
@@ -235,7 +208,7 @@ const userCache = new Map();
 async function fetchJSON(url, opts = {}) {
   const res = await fetch(url, { credentials: 'include', ...opts });
   if (!res.ok) {
-    const txt = await res.text().catch(() => '');
+    const txt = await res.text().catch(()=>'');
     throw new Error(`Fetch ${url} failed: ${res.status} ${res.statusText} ${txt}`);
   }
   return res.json();
@@ -257,68 +230,26 @@ async function batchFetchUsers(uids) {
     const map = {};
     await Promise.all(uids.map(async (uid) => {
       try {
-        const res = await fetch(`${USER_API_BASE}/${encodeURIComponent(uid)}`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          map[uid] = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null)) || null;
-        } else {
-          map[uid] = null;
-        }
-      } catch (e) {
-        map[uid] = null;
-      }
+        const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
+        map[uid] = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null)) || null;
+      } catch (e) { map[uid] = null; }
     }));
     return map;
   }
 }
-function uidToInitialsFromName(name) {
-  if (!name || typeof name !== 'string') return null;
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
 function uidToInitials(uid) {
   if (!uid) return '??';
   if (typeof uid === 'string') {
-    const clean = uid.replace(/[^a-zA-Z0-9]/g, '');
+    const clean = uid.replace(/[^a-zA-Z0-9]/g,'');
     if (clean.length <= 4) return clean.toUpperCase();
     return clean.slice(0,4).toUpperCase();
   }
   return String(uid).slice(0,4).toUpperCase();
 }
-async function getUserName(uid) {
-  if (!uid) return 'Unknown';
-  const stored = getStoredUser();
-  if (stored && (stored.user_id === uid || stored.id === uid || stored.email === uid)) {
-    return stored.name || stored.displayName || stored.email || uidToInitials(uid);
-  }
-  if (userCache.has(uid)) {
-    const v = userCache.get(uid);
-    if (v instanceof Promise) return v;
-    return v;
-  }
-  const p = (async () => {
-    try {
-      const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
-      const name = data && (data.name || data.displayName || (data.firstName ? `${data.firstName} ${data.lastName||''}`.trim() : null));
-      const final = name || uidToInitials(uid) || 'Unknown';
-      userCache.set(uid, final);
-      return final;
-    } catch (err) {
-      const fallback = uidToInitials(uid) || 'Unknown';
-      userCache.set(uid, fallback);
-      return fallback;
-    }
-  })();
-  userCache.set(uid, p);
-  return p;
-}
 async function resolveNamesForRooms(roomArray) {
   if (!Array.isArray(roomArray) || roomArray.length === 0) return;
   const uids = new Set();
-  for (const r of roomArray) {
-    if (r && r.creatorId && !r.creatorName) uids.add(String(r.creatorId));
-  }
+  for (const r of roomArray) if (r && r.creatorId && !r.creatorName) uids.add(String(r.creatorId));
   if (!uids.size) return;
   const uidList = Array.from(uids);
   const map = await batchFetchUsers(uidList);
@@ -341,20 +272,13 @@ async function fetchRoomsFromServer() {
     if (!res.ok) throw new Error("Failed to fetch rooms");
     const j = await res.json();
     const serverRooms = Array.isArray(j.rooms) ? j.rooms.map(normalizeRoom) : [];
-
-    const userId = getCurrentUserId();
-    const userName = getCurrentUserName();
+    const uid = getCurrentUserId(), uname = getCurrentUserName();
     serverRooms.forEach(r => {
-      if ((!r.creatorName || r.creatorName === null) && r.creatorId && userId && String(r.creatorId) === String(userId)) {
-        r.creatorName = userName || r.creatorName;
-      }
+      if ((!r.creatorName || r.creatorName === null) && r.creatorId && uid && String(r.creatorId) === String(uid)) r.creatorName = uname || r.creatorName;
     });
-
     await resolveNamesForRooms(serverRooms);
-
-    rooms = []; 
+    rooms = [];
     for (const r of serverRooms) ensureRoomInserted(r, { toTop: false });
-
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -380,19 +304,16 @@ async function createRoomOnServer(roomPayload) {
       body: JSON.stringify(roomPayload)
     });
     if (!res.ok) {
-      const text = await res.text();
+      const text = await res.text().catch(()=>'');
       throw new Error(text || "create failed");
     }
     const j = await res.json();
     const created = normalizeRoom(j.room || j);
-
-    const uid = getCurrentUserId();
-    if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
+    console.log("[createRoomOnServer] created response id:", created.id, "raw:", j.room || j);
+    if ((!created.creatorName || created.creatorName === null) && created.creatorId && getCurrentUserId() && String(created.creatorId) === String(getCurrentUserId())) {
       created.creatorName = getCurrentUserName();
     }
-
     await resolveNamesForRooms([created]);
-
     ensureRoomInserted(created, { toTop: true });
     saveLocalBackup();
     renderJoinedRooms();
@@ -402,6 +323,7 @@ async function createRoomOnServer(roomPayload) {
     showMessage("Failed to create room (server). Using local fallback.", true);
     console.warn(e);
     const created = normalizeRoom({
+      // temporary local id
       id: `local-${Date.now()}`,
       name: roomPayload.room_name || roomPayload.destination || roomPayload.name,
       members: 1,
@@ -427,16 +349,14 @@ async function joinRoomOnServer(roomId, userId) {
       body: JSON.stringify({ room_id: roomId, user_id: userId })
     });
     if (!res.ok) {
-      const txt = await res.text();
-      console.warn(`joinRoomOnServer: server response ${res.status} ${res.statusText} - ${txt}`);
+      const txt = await res.text().catch(()=>'');
+      console.warn("joinRoomOnServer server status:", res.status, txt);
       throw new Error(txt || "join failed");
     }
     let j;
-    try { j = await res.json(); } catch (e) { j = {}; }
-
+    try { j = await res.json(); } catch (err) { j = {}; }
     const updated = normalizeRoom(j.room || j);
     await resolveNamesForRooms([updated]);
-
     ensureRoomInserted(updated, { toTop: false });
     const nid = normalizeId(updated.id);
     if (!joinedRooms.includes(nid)) joinedRooms.push(nid);
@@ -446,7 +366,7 @@ async function joinRoomOnServer(roomId, userId) {
     try { localStorage.setItem("currentRoom", JSON.stringify(j.room || j)); } catch {}
     return updated;
   } catch (e) {
-    console.warn("joinRoomOnServer: exception", e);
+    console.warn("joinRoomOnServer exception:", e);
     showMessage("Failed to join on server, falling back to local.", true);
     const nid = normalizeId(roomId);
     if (!joinedRooms.includes(nid)) joinedRooms.push(nid);
@@ -457,24 +377,17 @@ async function joinRoomOnServer(roomId, userId) {
 }
 
 async function deleteRoomOnServer(roomId) {
-  const existingRoom = rooms.find(r => r.id === roomId);
   try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    });
-
-    const text = await res.text();
+    const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, { method: 'DELETE', credentials: 'include' });
+    const text = await res.text().catch(()=>'');
     let body = null;
     try { body = JSON.parse(text); } catch(e) { body = text; }
-
     if (!res.ok) {
       const errMsg = (body && body.detail) || (body && body.message) || (typeof body === 'string' ? body : `HTTP ${res.status}`);
       showMessage(`Failed to delete room: ${errMsg}`, true);
       console.warn('delete failed', res.status, body);
       return false;
     }
-
     rooms = rooms.filter(r => r.id !== roomId);
     joinedRooms = joinedRooms.filter(n => n !== roomId && n !== String(roomId));
     saveLocalBackup();
@@ -490,54 +403,38 @@ async function deleteRoomOnServer(roomId) {
 
 function connectRoomsSocket() {
   const url = WS_URL;
-  try {
-    ws = new WebSocket(url);
-  } catch (e) {
-    console.warn("WebSocket connect failed", e);
-    return;
-  }
-
+  try { ws = new WebSocket(url); } catch (e) { console.warn("WebSocket connect failed", e); return; }
   ws.addEventListener("open", () => console.log("rooms socket open", url));
   ws.addEventListener("message", ev => {
     try {
       const data = JSON.parse(ev.data);
       if (!data || !data.type) return;
       console.log("rooms socket message", data);
-
       if (data.type === "room:new") {
         const r = normalizeRoom(data.room || data);
+        console.log("[ws room:new] payload id:", r.id, "raw:", data.room || data);
         if ((!r.creatorName || r.creatorName === null) && r.creatorId && getCurrentUserId() && String(r.creatorId) === String(getCurrentUserId())) {
           r.creatorName = getCurrentUserName();
         }
         ensureRoomInserted(r, { toTop: true });
-        resolveNamesForRooms([r]).then(() => {
-          saveLocalBackup();
-          renderRooms();
-        }).catch(() => { saveLocalBackup(); renderRooms(); });
+        resolveNamesForRooms([r]).then(()=>{ saveLocalBackup(); renderRooms(); }).catch(()=>{ saveLocalBackup(); renderRooms(); });
       } else if (data.type === "room:delete") {
-        const deletedId = normalizeId((data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room);
+        const deletedId = (data.room && (data.room.room_id || data.room.id)) || data.room_id || data.room;
         rooms = rooms.filter(x => x.id !== deletedId);
         joinedRooms = joinedRooms.filter(n => n !== deletedId && n !== String(deletedId));
         saveLocalBackup();
         renderRooms();
         renderJoinedRooms();
-      } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
+      } else if (["room:update","room:join","room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
         ensureRoomInserted(r, { toTop: false });
-        resolveNamesForRooms([r]).then(() => {
-          saveLocalBackup();
-          renderRooms();
-          renderJoinedRooms();
-        }).catch(() => { saveLocalBackup(); renderRooms(); renderJoinedRooms(); });
+        resolveNamesForRooms([r]).then(()=>{ saveLocalBackup(); renderRooms(); renderJoinedRooms(); }).catch(()=>{ saveLocalBackup(); renderRooms(); renderJoinedRooms(); });
       }
     } catch (err) {
       console.warn("invalid rooms socket message", err);
     }
   });
-  ws.addEventListener("close", () => {
-    console.log("rooms socket closed — will attempt reconnect in 3s");
-    setTimeout(connectRoomsSocket, 3000);
-  });
+  ws.addEventListener("close", ()=>{ console.log("rooms socket closed — will attempt reconnect in 3s"); setTimeout(connectRoomsSocket, 3000); });
   ws.addEventListener("error", e => console.warn("rooms socket error", e));
 }
 
@@ -573,38 +470,26 @@ function wireUI() {
   });
 
   document.addEventListener("click", async (ev) => {
-    const actionable = ev.target.closest
-      ? ev.target.closest('button[data-join], button[data-enter], button[data-delete], [data-join], [data-enter], [data-delete]')
-      : ev.target;
-
+    const actionable = ev.target.closest ? ev.target.closest('button[data-join], button[data-enter], button[data-delete], [data-join], [data-enter], [data-delete]') : ev.target;
     if (!actionable) return;
-
     const joinId = actionable.dataset?.join;
     const enterId = actionable.dataset?.enter;
     const deleteId = actionable.dataset?.delete;
 
-    if (joinId) {
-      ev.preventDefault();
-      await joinRoomOnServer(joinId, getCurrentUserId());
-      return;
-    }
+    if (joinId) { ev.preventDefault(); await joinRoomOnServer(joinId, getCurrentUserId()); return; }
     if (enterId) {
       ev.preventDefault();
       const room = rooms.find(r => r.id === enterId);
       if (room) {
         try { localStorage.setItem("currentRoom", JSON.stringify(room.raw || room)); } catch {}
         const nid = normalizeId(room.id);
-        if (!joinedRooms.includes(nid)) {
-          joinedRooms.push(nid);
-          saveLocalBackup();
-        }
+        if (!joinedRooms.includes(nid)) { joinedRooms.push(nid); saveLocalBackup(); }
         window.location.href = "chat.html";
       }
       return;
     }
     if (deleteId) {
       ev.preventDefault();
-      const existing = rooms.find(r => r.id === deleteId);
       rooms = rooms.filter(r => r.id !== deleteId);
       joinedRooms = joinedRooms.filter(n => n !== deleteId);
       saveLocalBackup();
@@ -634,41 +519,19 @@ function isValidMeetTime(raw) {
 
 (async function init() {
   const AUTH_WAIT_MS = 2000;
-  function getLocalUserSafe() {
-    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
-  }
-
+  function getLocalUserSafe() { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } }
   const authReady = new Promise((resolve) => {
     const existing = getLocalUserSafe();
     if (existing) { resolve(existing); return; }
-
-    function onStorage(e) {
-      if (e.key === "user") {
-        window.removeEventListener("storage", onStorage);
-        window.removeEventListener("auth:update", onAuthUpdate);
-        try { resolve(e.newValue ? JSON.parse(e.newValue) : null); } catch { resolve(null); }
-      }
-    }
-    function onAuthUpdate(evt) {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("auth:update", onAuthUpdate);
-      resolve(evt.detail ?? getLocalUserSafe());
-    }
+    function onStorage(e) { if (e.key === "user") { window.removeEventListener("storage", onStorage); window.removeEventListener("auth:update", onAuthUpdate); try { resolve(e.newValue ? JSON.parse(e.newValue) : null); } catch { resolve(null); } } }
+    function onAuthUpdate(evt) { window.removeEventListener("storage", onStorage); window.removeEventListener("auth:update", onAuthUpdate); resolve(evt.detail ?? getLocalUserSafe()); }
     window.addEventListener("storage", onStorage);
     window.addEventListener("auth:update", onAuthUpdate);
-    setTimeout(() => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("auth:update", onAuthUpdate);
-      resolve(getLocalUserSafe());
-    }, AUTH_WAIT_MS);
+    setTimeout(()=>{ window.removeEventListener("storage", onStorage); window.removeEventListener("auth:update", onAuthUpdate); resolve(getLocalUserSafe()); }, AUTH_WAIT_MS);
   });
 
   const authUser = await authReady;
-
-  if (!authUser) {
-    window.location.href = "login.html";
-    return;
-  }
+  if (!authUser) { window.location.href = "login.html"; return; }
 
   loadLocalBackup();
   connectRoomsSocket();
