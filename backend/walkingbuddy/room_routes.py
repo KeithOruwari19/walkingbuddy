@@ -48,7 +48,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 class CreateRoomRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     destination: str
     start_coord: List[float]
     dest_coord: List[float]
@@ -61,11 +61,11 @@ class CreateRoomRequest(BaseModel):
     startLocation: Optional[str] = None
 
 class JoinRoomRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     room_id: str
 
 class LeaveRoomRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     room_id: str
 
 class UpdateRoomStatusRequest(BaseModel):
@@ -123,6 +123,9 @@ async def emit_room_event(event_type: str, room: dict):
 
 @router.post("/create")
 async def create_room(req: CreateRoomRequest, request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         room_id = str(uuid.uuid4())[:8]
         name = req.room_name or req.name
@@ -131,7 +134,7 @@ async def create_room(req: CreateRoomRequest, request: Request):
 
         room = RoomDatabase.create_room(
             room_id=room_id,
-            creator_id=req.user_id,
+            creator_id=user_id,
             destination=req.destination,
             start_coord=req.start_coord,
             dest_coord=req.dest_coord,
@@ -141,20 +144,7 @@ async def create_room(req: CreateRoomRequest, request: Request):
             start_location=start_loc
         )
 
-        try:
-            try:
-                RoomDatabase.join_room(room_id, req.user_id)
-            except Exception as join_exc:
-                logger.info("[rooms.create] join_room for creator raised: %s", join_exc)
-        except Exception:
-            pass
-
-        try:
-            session_name = (request.session.get("user_name") or request.session.get("name") or None)
-            if session_name:
-                room["creator_name"] = session_name
-        except Exception:
-            pass
+        RoomDatabase.join_room(room_id, user_id)
 
         attach_creator_name(room)
         attach_canonical_ids(room, prefer_room_id=room_id)
@@ -164,19 +154,19 @@ async def create_room(req: CreateRoomRequest, request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
         
 @router.get("/list")
 def list_rooms():
     rooms = RoomDatabase.get_active_rooms()
-    enriched = [attach_creator_name(dict(r)) for r in rooms]
-    enriched = [attach_canonical_ids(r) for r in enriched]
+    enriched = [attach_canonical_ids(attach_creator_name(dict(r))) for r in rooms]
     return {"success": True, "rooms": enriched}
 
 @router.post("/join")
 async def join_room(req: JoinRoomRequest):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         room = RoomDatabase.join_room(req.room_id, req.user_id)
         attach_creator_name(room)
@@ -195,6 +185,10 @@ async def join_room(req: JoinRoomRequest):
 
 @router.post("/leave")
 async def leave_room(req: LeaveRoomRequest):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
     try:
         room = RoomDatabase.leave_room(req.room_id, req.user_id)
         attach_creator_name(room)
