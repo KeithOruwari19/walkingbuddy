@@ -48,7 +48,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 class CreateRoomRequest(BaseModel):
-    user_id: Optional[str] = None
+    user_id: str
     destination: str
     start_coord: List[float]
     dest_coord: List[float]
@@ -61,11 +61,11 @@ class CreateRoomRequest(BaseModel):
     startLocation: Optional[str] = None
 
 class JoinRoomRequest(BaseModel):
-    user_id: Optional[str] = None
+    user_id: str
     room_id: str
 
 class LeaveRoomRequest(BaseModel):
-    user_id: Optional[str] = None
+    user_id: str
     room_id: str
 
 class UpdateRoomStatusRequest(BaseModel):
@@ -140,21 +140,18 @@ async def create_room(req: CreateRoomRequest, request: Request):
             meet_time=meet,
             start_location=start_loc
         )
+
         try:
             session_name = (request.session.get("user_name") or request.session.get("name") or None)
             if session_name:
                 room["creator_name"] = session_name
         except Exception:
             pass
-        try:
-            attach_creator_name(room)
-        except Exception:
-            logger.exception("[rooms.create] attach_creator_name failed for %s", room_id)
-        try:
-            await emit_room_event("room:new", room)
-        except Exception:
-            logger.exception("[rooms.create] emit_room_event failed for %s (broadcast error)", room_id)
 
+        attach_creator_name(room)
+        attach_canonical_ids(room, prefer_room_id=room_id)
+
+        await emit_room_event("room:new", room)
         return {"success": True, "room": room, "message": f"Room {room_id} created."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -166,80 +163,45 @@ async def create_room(req: CreateRoomRequest, request: Request):
 @router.get("/list")
 def list_rooms():
     rooms = RoomDatabase.get_active_rooms()
-    enriched = [attach_canonical_ids(attach_creator_name(dict(r))) for r in rooms]
+    enriched = [attach_creator_name(dict(r)) for r in rooms]
+    enriched = [attach_canonical_ids(r) for r in enriched]
     return {"success": True, "rooms": enriched}
 
 @router.post("/join")
-async def join_room(req: JoinRoomRequest, request: Request):
-    # Prefer the session user id; fall back to the body or query param (useful for debugging).
-    user_id = None
+async def join_room(req: JoinRoomRequest):
     try:
-        user_id = request.session.get("user_id")
-    except Exception:
-        user_id = None
-
-    # fallback to provided body or query param if no session (debugging mode)
-    if not user_id:
-        user_id = req.user_id or request.query_params.get("user_id")
-
-    if not user_id:
-        logger.info("[rooms.join] auth failed: no session and no user_id supplied (headers=%s)", dict(request.headers))
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    try:
-        # Ensure we pass the resolved user_id to the DB call
-        room = RoomDatabase.join_room(req.room_id, str(user_id))
+        room = RoomDatabase.join_room(req.room_id, req.user_id)
         attach_creator_name(room)
         attach_canonical_ids(room)
         await emit_room_event("room:join", room)
         return {
             "success": True,
             "room": room,
-            "message": f"User {user_id} joined room {req.room_id}.",
+            "message": f"User {req.user_id} joined room {req.room_id}.",
         }
     except ValueError as e:
-        if "not found" in str(e).lower():
+        if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("[rooms.join] unexpected error joining %s for user %s", req.room_id, user_id)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 
 @router.post("/leave")
-async def leave_room(req: LeaveRoomRequest, request: Request):
-    user_id = None
+async def leave_room(req: LeaveRoomRequest):
     try:
-        user_id = request.session.get("user_id")
-    except Exception:
-        user_id = None
-
-    if not user_id:
-        user_id = req.user_id or request.query_params.get("user_id")
-
-    if not user_id:
-        logger.info("[rooms.leave] auth failed: no session and no user_id supplied (headers=%s)", dict(request.headers))
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    try:
-        room = RoomDatabase.leave_room(req.room_id, str(user_id))
+        room = RoomDatabase.leave_room(req.room_id, req.user_id)
         attach_creator_name(room)
         attach_canonical_ids(room)
         await emit_room_event("room:leave", room)
         return {
             "success": True,
             "room": room,
-            "message": f"User {user_id} left room {req.room_id}.",
+            "message": f"User {req.user_id} left room {req.room_id}.",
         }
     except ValueError as e:
-        if "not found" in str(e).lower():
+        if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("[rooms.leave] unexpected error leaving %s for user %s", req.room_id, user_id)
-        raise HTTPException(status_code=500, detail="Internal server error")
             
 @router.delete("/{room_id}")
 async def delete_room(room_id: str, request: Request, user_id: Optional[str] = None):
@@ -316,3 +278,4 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
     except Exception:
         manager.disconnect(websocket)
+        
