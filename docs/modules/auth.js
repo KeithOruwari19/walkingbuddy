@@ -25,12 +25,25 @@
   const logoutBtn = document.getElementById("logout-btn") || document.querySelector("[data-logout]");
 
   function hideAuthLinks() {
-    if (authLinks) authLinks.classList.add("hidden");
-    if (userInfo) userInfo.classList.remove("hidden");
+    if (authLinks) {
+      authLinks.classList.add("hidden");
+      authLinks.style.display = "none";
+    }
+    if (userInfo) {
+      userInfo.classList.remove("hidden");
+      userInfo.style.display = "inline-flex";
+    }
   }
+
   function showAuthLinks() {
-    if (authLinks) authLinks.classList.remove("hidden");
-    if (userInfo) userInfo.classList.add("hidden");
+    if (authLinks) {
+      authLinks.classList.remove("hidden");
+      authLinks.style.display = "inline-flex";
+    }
+    if (userInfo) {
+      userInfo.classList.add("hidden");
+      userInfo.style.display = "none";
+    }
   }
 
   function renderLoggedIn(user) {
