@@ -215,17 +215,6 @@ async function fetchRoomsFromServer() {
   }
 }
 
-function canonicalizeServerRoomObj(roomObj) {
-  if (!roomObj || typeof roomObj !== 'object') return roomObj;
-  const rid = roomObj.room_id || roomObj.id || roomObj.uuid || roomObj.roomId || null;
-  if (rid) {
-    roomObj.room_id = String(rid);
-    roomObj.id = String(rid);
-    roomObj.uuid = String(rid);
-  }
-  return roomObj;
-}
-
 async function createRoomOnServer(roomPayload) {
   const createBtn = document.querySelector("#btn-create-room");
   if (createBtn) createBtn.disabled = true;
@@ -244,16 +233,13 @@ async function createRoomOnServer(roomPayload) {
       body: JSON.stringify(roomPayload)
     });
 
-    const text = await res.text().catch(() => "");
+    const text = await res.text().catch(()=>"");
     let j = null;
-    try { j = text ? JSON.parse(text) : null; } catch (e) { j = null; }
-
-    console.log("createRoomOnServer: status=", res.status, "body=", j || text);
+    try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
 
     if (!res.ok) {
       const possible = j && (j.room || j) ? (j.room || j) : null;
-      if (possible && (possible.room_id || possible.id || possible.uuid)) {
-        canonicalizeServerRoomObj(possible);
+      if (possible && (possible.room_id || possible.id)) {
         upsertRoom(possible);
         if (!joinedRooms.includes(String(possible.room_id || possible.id))) joinedRooms.push(String(possible.room_id || possible.id));
         dedupeJoinedRooms();
@@ -261,37 +247,30 @@ async function createRoomOnServer(roomPayload) {
         renderJoinedRooms();
         renderRooms();
         try { localStorage.setItem("currentRoom", JSON.stringify((possible.raw || possible))); } catch {}
-        showMessage("Room created (server responded non-2xx but returned room).");
         return normalizeRoom(possible);
       }
-
-      const serverMsg = (j && (j.detail || j.message)) || text || `${res.status} ${res.statusText}`;
-      showMessage(`Create failed: ${serverMsg}`, true);
-      console.warn("createRoomOnServer: create failed, server response:", res.status, text || j);
-      return null;
+      const errText = text || `${res.status} ${res.statusText}`;
+      showMessage("Failed to create room on server.", true);
+      throw new Error(`Create failed: ${errText}`);
     }
 
     const roomObj = j && (j.room || j) ? (j.room || j) : null;
     if (!roomObj) {
-      console.warn("createRoomOnServer: server 200 but no room object returned. Full body:", j || text);
-      await fetchRoomsFromServer(); 
-      showMessage("Created but server returned no room object; refreshed list.", true);
-      return null;
+      showMessage("Server did not return created room.", true);
+      throw new Error("Server did not return created room");
     }
-    canonicalizeServerRoomObj(roomObj);
+
     upsertRoom(roomObj);
     if (!joinedRooms.includes(String(roomObj.room_id || roomObj.id))) joinedRooms.push(String(roomObj.room_id || roomObj.id));
     dedupeJoinedRooms();
+
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
     try { localStorage.setItem("currentRoom", JSON.stringify(roomObj.raw || roomObj)); } catch {}
-    showMessage("Room created.");
     return normalizeRoom(roomObj);
-
   } catch (e) {
     console.warn("createRoomOnServer error:", e);
-    showMessage("Network error creating room.", true);
     return null;
   } finally {
     if (createBtn) createBtn.disabled = false;
