@@ -192,79 +192,94 @@
   }
 
   async function createRoom() {
-    if (!currentRouteData) {
-      showRouteInfo("No route available to create a room. Load a route first.");
+  if (!currentRouteData) {
+    showRouteInfo("No route available to create a room. Load a route first.");
+    return;
+  }
+
+  if (btnCreateRoom) {
+    btnCreateRoom.disabled = true;
+    btnCreateRoom.textContent = 'Creating room...';
+  }
+
+  try {
+    const verifyRes = await fetch(`${BACKEND_BASE}/auth/verify`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!verifyRes.ok) {
+      window.location.href = `${window.location.origin}/login.html`;
+      return;
+    }
+    const user = await verifyRes.json();
+    const userId = user.user_id || user.id || user.userId;
+    if (!userId) {
+      window.location.href = `${window.location.origin}/login.html`;
+      return;
+    }
+    const start_coord = currentRouteData.start_coord && currentRouteData.start_coord.length === 2
+      ? currentRouteData.start_coord
+      : (currentRouteData.geometry && currentRouteData.geometry.length ? currentRouteData.geometry[0] : null);
+
+    const dest_coord = currentRouteData.dest_coord && currentRouteData.dest_coord.length === 2
+      ? currentRouteData.dest_coord
+      : (currentRouteData.geometry && currentRouteData.geometry.length ? currentRouteData.geometry[currentRouteData.geometry.length - 1] : null);
+
+    if (!start_coord || !dest_coord) {
+      showRouteInfo("Could not determine start/destination coordinates for the room.");
+      if (btnCreateRoom) { btnCreateRoom.disabled = false; btnCreateRoom.textContent = 'Create Room'; }
       return;
     }
 
-    if (btnCreateRoom) {
-      btnCreateRoom.disabled = true;
-      btnCreateRoom.textContent = 'Creating room...';
-    }
-
     const payload = {
-      name: `${currentRouteData.start_text} → ${currentRouteData.dest_text}`,
-      start: currentRouteData.start_coord,
-      destination: currentRouteData.dest_coord,
-      distance_m: currentRouteData.distance_m,
-      duration_s: currentRouteData.duration_s,
-      geometry: currentRouteData.geometry
+      user_id: String(userId),
+      destination: currentRouteData.dest_text || '',
+      start_coord: [Number(start_coord[0]), Number(start_coord[1])],
+      dest_coord: [Number(dest_coord[0]), Number(dest_coord[1])],
+      max_members: 10
     };
 
-    const tryEndpoints = [
-      `${BACKEND_BASE}/rooms`,
-      `${BACKEND_BASE}/rooms/create`,
-      `${BACKEND_BASE}/api/rooms`,
-      `${BACKEND_BASE}/api/rooms/create`,
-      `${BACKEND_BASE}/walkingbuddy/rooms`,
-    ];
+    const res = await fetch(`${BACKEND_BASE}/api/rooms/create`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-    let lastError = null;
-    for (const ep of tryEndpoints) {
-      try {
-        const res = await fetch(ep, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+    const data = await res.json().catch(()=>({}));
 
-        // treat 200 or 201 as success
-        if (res.ok) {
-          let data = {};
-          try { data = await res.json(); } catch(e){}
-
-          // If server returns a room URL or ID, redirect there
-          if (data.room_url) {
-            window.location.href = data.room_url;
-            return;
-          }
-          if (data.room_id) {
-            // guess a room page path if not provided
-            window.location.href = `${window.location.origin}/rooms.html?room_id=${encodeURIComponent(data.room_id)}`;
-            return;
-          }
-
-          // fallback
-          window.location.href = `${window.location.origin}/rooms.html`;
-          return;
-        } else {
-          lastError = `Endpoint ${ep} returned ${res.status}`;
-          // continue trying other endpoints
-        }
-      } catch (err) {
-        lastError = err;
-        // try next endpoint
+    if (res.ok && data.success) {
+      // backend returns room in data.room
+      const roomObj = data.room || {};
+      const roomId = roomObj.id || roomObj.room_id || roomObj.roomId || roomObj['room_id'];
+      const roomUrl = data.room_url || roomObj.url || roomObj.room_url;
+      if (roomUrl) {
+        window.location.href = roomUrl;
+        return;
+      } else if (roomId) {
+        window.location.href = `${window.location.origin}/rooms.html?room_id=${encodeURIComponent(roomId)}`;
+        return;
+      } else {
+        window.location.href = `${window.location.origin}/rooms.html`;
+        return;
       }
+    } else {
+      // show error returned by server or fallback message
+      const detail = data.detail || data.message || data.error || JSON.stringify(data) || res.statusText;
+      showRouteInfo(`Failed to create room: ${detail}`);
     }
-
-    // all endpoints failed
-    showRouteInfo(`Failed to create room: ${lastError}`);
+  } catch (err) {
+    console.error('createRoom error', err);
+    showRouteInfo('Network error while creating room.');
+  } finally {
     if (btnCreateRoom) {
       btnCreateRoom.disabled = false;
       btnCreateRoom.textContent = 'Create Room';
     }
   }
+}
 
   window.addEventListener('load', () => {
     btnGetRoute = document.getElementById('btn-get-route');
