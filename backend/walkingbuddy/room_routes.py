@@ -73,9 +73,13 @@ async def emit_room_event(event_type: str, room: dict):
     await manager.broadcast(payload)
 
 @router.post("/create")
-async def create_room(req: CreateRoomRequest):
+async def create_room(req: CreateRoomRequest, request: Request):
     try:
         room_id = str(uuid.uuid4())[:8]
+        name = req.room_name or req.name
+        meet = req.meet_time or getattr(req, "meetTime", None)
+        start_loc = req.start_location or getattr(req, "startLocation", None)
+
         room = RoomDatabase.create_room(
             room_id=room_id,
             creator_id=req.user_id,
@@ -83,13 +87,27 @@ async def create_room(req: CreateRoomRequest):
             start_coord=req.start_coord,
             dest_coord=req.dest_coord,
             max_members=req.max_members,
+            name=name,
+            meet_time=meet,
+            start_location=start_loc
         )
-        # broadcast the new room
+
+        try:
+            session_name = (request.session.get("user_name") or request.session.get("name") or None)
+            if session_name:
+                room["creator_name"] = session_name
+        except Exception:
+            pass
+
         await emit_room_event("room:new", room)
         return {"success": True, "room": room, "message": f"Room {room_id} created."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+        
 @router.get("/list")
 def list_rooms():
     rooms = RoomDatabase.get_active_rooms()
