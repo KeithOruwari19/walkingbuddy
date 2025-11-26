@@ -11,7 +11,26 @@
 <script>
 (() => {
   const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
-
+  
+  async function shouldShowAuthLinks() {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/auth/verify`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    });
+    return !res.ok; 
+  } catch (e) {
+    console.warn('Auth verify failed (network):', e);
+    return true;
+  }
+}
+(async () => {
+  const showLinks = await shouldShowAuthLinks();
+  if (!showLinks) {
+    return;
+  }
+})();
   let btnGetRoute = null;
   let btnUseLocation = null;
   let btnCreateRoom = null;
