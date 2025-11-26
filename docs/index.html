@@ -12,13 +12,13 @@
 (() => {
   const BACKEND_BASE = "https://cp317-group-18-project.onrender.com";
 
-  const btnGetRoute = document.getElementById('btn-get-route');
-  const btnUseLocation = document.getElementById('btn-use-location');
-  const btnCreateRoom = document.getElementById('btn-create-room');
-  const startInput = document.getElementById('start-input');
-  const destInput = document.getElementById('dest-input');
-  const routeInfo = document.getElementById('route-info');
-  const navLinks = document.querySelector('.nav-links');
+  let btnGetRoute = null;
+  let btnUseLocation = null;
+  let btnCreateRoom = null;
+  let startInput = null;
+  let destInput = null;
+  let routeInfo = null;
+  let navLinks = null;
 
   let map = window.map || null;
   let currentRouteLayer = null;
@@ -59,14 +59,14 @@
     } catch (e) {}
   }
 
-  async function getRoute() {
-    const start = startInput.value.trim();
-    const dest = destInput.value.trim();
+   async function getRoute() {
+    const start = (startInput && startInput.value ? startInput.value.trim() : "");
+    const dest = (destInput && destInput.value ? destInput.value.trim() : "");
     if (!start) { showRouteInfo('Please enter a start address.'); return; }
     if (!dest)  { showRouteInfo('Please enter a destination.'); return; }
 
     showRouteInfo('Loading route...');
-    btnGetRoute.disabled = true;
+    if (btnGetRoute) btnGetRoute.disabled = true;
 
     try {
       const url = `${BACKEND_BASE}/api/navigation/route?start=${encodeURIComponent(start)}&destination=${encodeURIComponent(dest)}&mode=walking`;
@@ -82,7 +82,6 @@
         return;
       }
       const route = data.route;
-      // distance in meters, duration in seconds
       const km = (route.distance_m / 1000).toFixed(2);
       const mins = Math.round(route.duration_s / 60);
       showRouteInfo(`Distance: ${km} km • ETA: ${mins} min`);
@@ -94,7 +93,7 @@
       console.error('getRoute error', err);
       showRouteInfo('Network or server error while getting route.');
     } finally {
-      btnGetRoute.disabled = false;
+      if (btnGetRoute) btnGetRoute.disabled = false;
     }
   }
 
@@ -131,7 +130,7 @@
     }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 });
   }
 
-  async function checkSessionAndUpdateNav() {
+   async function checkSessionAndUpdateNav() {
     try {
       const res = await fetch(`${BACKEND_BASE}/auth/verify`, {
         method: 'GET',
@@ -147,7 +146,6 @@
       console.warn('session check error', err);
     }
   }
-
   function setLoggedInNav(user) {
     if (!navLinks) return;
     const loginA = navLinks.querySelector('a[href="login.html"]');
@@ -181,20 +179,26 @@
     navLinks.appendChild(logoutA);
   }
 
-  if (btnGetRoute) btnGetRoute.addEventListener('click', (e)=>{ e.preventDefault(); getRoute(); });
-  if (btnUseLocation) btnUseLocation.addEventListener('click', (e)=>{ e.preventDefault(); useMyLocation(); });
+window.addEventListener('load', () => {
+    btnGetRoute = document.getElementById('btn-get-route');
+    btnUseLocation = document.getElementById('btn-use-location');
+    btnCreateRoom = document.getElementById('btn-create-room');
+    startInput = document.getElementById('start-input');
+    destInput = document.getElementById('dest-input');
+    routeInfo = document.getElementById('route-info');
+    navLinks = document.querySelector('.nav-links');
 
-  if (destInput) {
-    destInput.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') { ev.preventDefault(); getRoute(); }
-    });
-  }
+    if (btnGetRoute) btnGetRoute.addEventListener('click', (e)=>{ e.preventDefault(); getRoute(); });
+    if (btnUseLocation) btnUseLocation.addEventListener('click', (e)=>{ e.preventDefault(); useMyLocation(); });
+    if (destInput) {
+      destInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); getRoute(); }
+      });
+    }
 
-  window.addEventListener('load', () => {
     ensureMap();
     checkSessionAndUpdateNav();
   });
-
 })();
 </script>
 <body>
