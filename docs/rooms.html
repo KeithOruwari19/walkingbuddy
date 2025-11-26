@@ -24,6 +24,22 @@
     #auth-links { display:inline-flex; gap:12px; align-items:center; }
     #user-info { display:inline-flex; gap:10px; align-items:center; }
     #user-avatar { width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; color:#fff; }
+
+    /* === ADDED: styles for Leave Room button and actions container === */
+    .btn.danger {
+      background: #d9534f;
+      color: #fff;
+      border: 0;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    /* small helper so action buttons have spacing (if your stylesheet doesn't already provide it) */
+    .room-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    /* ================================================================ */
+
   </style>
 </head>
 
@@ -199,4 +215,3 @@
 
 </body>
 </html>
-
