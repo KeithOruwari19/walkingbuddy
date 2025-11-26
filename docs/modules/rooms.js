@@ -31,7 +31,7 @@ function getCurrentUserName() {
   return u.name || u.full_name || u.displayName || u.email || null;
 }
 
-function escapeHtml(s){ return String(s || "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function normalizeRoom(r) {
   r = r || {};
@@ -96,8 +96,11 @@ function renderJoinedRooms() {
         <p><strong>Meeting:</strong> ${room.meetTime ? new Date(room.meetTime).toLocaleString() : "TBD"}</p>
         <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
       </div>
-      <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
-      ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
+      <div class="room-actions">
+        <button class="btn secondary" data-enter="${room.id}">Enter Chat</button>
+        <button class="btn danger" data-leave="${room.id}">Leave Room</button>
+        ${String(room.creatorId) === String(currentUserId) ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
+      </div>
     `;
     container.appendChild(div);
   });
@@ -120,6 +123,7 @@ function renderRooms() {
     div.classList.add("room-card");
     div.dataset.roomId = room.id;
     const isCreator = room.creatorId && currentUserId && String(room.creatorId) === String(currentUserId);
+    const isJoined = joinedRooms.includes(room.id);
     div.innerHTML = `
       <h3 class="room-title">${escapeHtml(room.name)}</h3>
       <div class="room-meta">
@@ -130,7 +134,7 @@ function renderRooms() {
         <p><strong>Creator:</strong> ${escapeHtml(room.creatorName || room.creatorId || 'Unknown')}</p>
       </div>
       <div class="room-actions">
-        <button class="btn secondary" data-join="${room.id}">Join Room</button>
+        ${isJoined ? `<button class="btn secondary" data-enter="${room.id}">Enter Chat</button> <button class="btn danger" data-leave="${room.id}">Leave Room</button>` : `<button class="btn secondary" data-join="${room.id}">Join Room</button>`}
         ${isCreator ? `<button class="btn outline" data-delete="${room.id}">Delete Room</button>` : ''}
       </div>
     `;
@@ -169,9 +173,11 @@ async function fetchJSON(url, opts = {}) {
 
 async function batchFetchUsers(uids) {
   if (!Array.isArray(uids) || uids.length === 0) return {};
+
   try {
     const body = JSON.stringify(uids);
     const json = await fetchJSON(`${USER_API_BASE}/batch`, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+    // expecting an object map: { uid: { name: '...' }, ... } or { uid: 'Name', ... }
     const result = {};
     for (const uid of uids) {
       const entry = json && (json[uid] || null);
@@ -223,6 +229,7 @@ async function getUserName(uid) {
     if (v instanceof Promise) return v;
     return v;
   }
+
   const p = (async () => {
     try {
       const data = await fetchJSON(`${USER_API_BASE}/${encodeURIComponent(uid)}`);
@@ -251,6 +258,7 @@ async function resolveNamesForRooms(roomArray) {
 
   const uidList = Array.from(uids);
   const map = await batchFetchUsers(uidList);
+
   for (const uid of uidList) {
     const name = map[uid] || null;
     if (name) userCache.set(uid, name);
@@ -379,6 +387,48 @@ async function joinRoomOnServer(roomId, userId) {
   }
 }
 
+async function leaveRoomOnServer(roomId, userId) {
+  try {
+    const res = await fetch(`${API_BASE}/leave`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room_id: roomId, user_id: userId })
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || "leave failed");
+    }
+
+    const j = await res.json();
+    const possibleRoom = (j && j.room) ? j.room : (j && j.updatedRoom) ? j.updatedRoom : (j && j.room_obj) ? j.room_obj : j;
+    const updated = normalizeRoom(possibleRoom || {});
+
+    if (updated && updated.id) {
+      const idx = rooms.findIndex(r => r.id === updated.id);
+      if (idx >= 0) rooms[idx] = updated;
+      else rooms.unshift(updated);
+    }
+
+    joinedRooms = joinedRooms.filter(id => id !== roomId && id !== String(roomId));
+    saveLocalBackup();
+    renderJoinedRooms();
+    renderRooms();
+
+    try { const cur = JSON.parse(localStorage.getItem('currentRoom') || 'null'); if (cur && (cur.id === roomId || cur.room_id === roomId)) localStorage.removeItem('currentRoom'); } catch(e){}
+
+    return true;
+  } catch (e) {
+    showMessage('Failed to leave room on server; removed locally.', true);
+    joinedRooms = joinedRooms.filter(id => id !== roomId && id !== String(roomId));
+    saveLocalBackup();
+    renderJoinedRooms();
+    renderRooms();
+    try { const cur = JSON.parse(localStorage.getItem('currentRoom') || 'null'); if (cur && (cur.id === roomId || cur.room_id === roomId)) localStorage.removeItem('currentRoom'); } catch(e){}
+    return false;
+  }
+}
+
 async function deleteRoomOnServer(roomId) {
   const existingRoom = rooms.find(r => r.id === roomId);
   try {
@@ -432,7 +482,6 @@ function connectRoomsSocket() {
           r.creatorName = getCurrentUserName();
         }
         if (!rooms.find(x => x.id === r.id)) rooms.unshift(r);
-        // resolve creatorName if needed then re-render
         resolveNamesForRooms([r]).then(() => {
           saveLocalBackup();
           renderRooms();
@@ -446,7 +495,6 @@ function connectRoomsSocket() {
         renderJoinedRooms();
       } else if (["room:update", "room:join", "room:leave"].includes(data.type)) {
         const r = normalizeRoom(data.room || data);
-        // update or insert
         const idx = rooms.findIndex(x => x.id === r.id);
         if (idx >= 0) rooms[idx] = r; else rooms.unshift(r);
         resolveNamesForRooms([r]).then(() => {
@@ -501,6 +549,7 @@ function wireUI() {
     const joinId = ev.target?.dataset?.join;
     const enterId = ev.target?.dataset?.enter;
     const deleteId = ev.target?.dataset?.delete;
+    const leaveId = ev.target?.dataset?.leave;
     if (joinId) {
       ev.preventDefault();
       await joinRoomOnServer(joinId, getCurrentUserId());
@@ -517,6 +566,16 @@ function wireUI() {
         }
         window.location.href = "chat.html";
       }
+      return;
+    }
+    if (leaveId) {
+      ev.preventDefault();
+      joinedRooms = joinedRooms.filter(n => n !== leaveId && n !== String(leaveId));
+      saveLocalBackup();
+      renderJoinedRooms();
+      renderRooms();
+      const ok = await leaveRoomOnServer(leaveId, getCurrentUserId());
+      if (!ok) showMessage('Failed to leave room on server. Removed locally.', true);
       return;
     }
     if (deleteId) {
