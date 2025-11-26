@@ -181,56 +181,73 @@ async function fetchRoomsFromServer() {
 }
 
 async function createRoomOnServer(roomPayload) {
+  const createBtn = document.querySelector("#btn-create-room");
+  if (createBtn) createBtn.disabled = true;
+
   try {
     const currentUser = getStoredUser();
     if (currentUser) {
       roomPayload.user_id = roomPayload.user_id || (currentUser.id || currentUser.user_id || currentUser.email || currentUser.name);
       roomPayload.creator_name = roomPayload.creator_name || (currentUser.name || currentUser.email || null);
     }
+
     const res = await fetch(`${API_BASE}/create`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(roomPayload)
     });
+
+    const text = await res.text().catch(()=>"");
+    let j = null;
+    try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
+
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "create failed");
+      // If server returned a room object in non-OK body, tolerate it
+      const possible = j && (j.room || j) ? (j.room || j) : null;
+      if (possible && (possible.room_id || possible.id)) {
+        const created = normalizeRoom(possible);
+        if ((!created.creatorName || created.creatorName === null) && created.creatorId && getCurrentUserId() && String(created.creatorId) === String(getCurrentUserId())) {
+          created.creatorName = getCurrentUserName();
+        }
+        if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
+        if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+        saveLocalBackup();
+        renderJoinedRooms();
+        renderRooms();
+        try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
+        return created;
+      }
+      const errText = text || `${res.status} ${res.statusText}`;
+      showMessage("Failed to create room on server.", true);
+      throw new Error(`Create failed: ${errText}`);
     }
-    const j = await res.json();
-    const created = normalizeRoom(j.room || j);
-    const uid = getCurrentUserId();
-    if ((!created.creatorName || created.creatorName === null) && created.creatorId && uid && String(created.creatorId) === String(uid)) {
+
+    const roomObj = j && (j.room || j) ? (j.room || j) : null;
+    if (!roomObj) {
+      showMessage("Server did not return created room.", true);
+      throw new Error("Server did not return created room");
+    }
+
+    const created = normalizeRoom(roomObj);
+    if ((!created.creatorName || created.creatorName === null) && created.creatorId && getCurrentUserId() && String(created.creatorId) === String(getCurrentUserId())) {
       created.creatorName = getCurrentUserName();
     }
+
     if (!rooms.find(r => r.id === created.id)) rooms.unshift(created);
+    if (!joinedRooms.includes(created.id)) joinedRooms.push(created.id);
+
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
+    try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
     return created;
   } catch (e) {
-    showMessage("Failed to create room (server). Using local fallback.", true);
-    console.warn(e);
-    const created = normalizeRoom({
-      id: `local-${Date.now()}`,
-      name: roomPayload.room_name || roomPayload.destination || roomPayload.name,
-      members: 1,
-      meetTime: roomPayload.meetTime || roomPayload.meet_time || null,
-      startLocation: roomPayload.start_coord || roomPayload.startLocation || "",
-      destination: roomPayload.destination || "",
-      creatorId: getCurrentUserId(),
-      creatorName: getCurrentUserName()
-    });
-    rooms.unshift(created);
-    try {
-      if (!joinedRooms.includes(created.id)) {
-        joinedRooms.push(created.id);
-      }
-      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
-    } catch (e) {  }
-    saveLocalBackup();
-    renderRooms();
-    return created;
+    console.warn("createRoomOnServer error:", e);
+    // showMessage already called above for user-friendly error in most cases
+    return null;
+  } finally {
+    if (createBtn) createBtn.disabled = false;
   }
 }
 
@@ -256,16 +273,13 @@ async function joinRoomOnServer(roomId, userId) {
     try { localStorage.setItem("currentRoom", JSON.stringify(j.room || j)); } catch {}
     return updated;
   } catch (e) {
-    showMessage("Failed to join on server, falling back to local.", true);
-    if (!joinedRooms.includes(roomId)) joinedRooms.push(roomId);
-    saveLocalBackup();
-    renderJoinedRooms();
+    showMessage("Failed to join on server.", true);
+    console.warn("joinRoomOnServer error:", e);
     return null;
   }
 }
 
 async function deleteRoomOnServer(roomId) {
-  const existingRoom = rooms.find(r => r.id === roomId);
   try {
     const res = await fetch(`${API_BASE}/${encodeURIComponent(roomId)}`, {
       method: 'DELETE',
@@ -369,63 +383,47 @@ function wireUI() {
     const created = await createRoomOnServer(payload);
     if (created) {
       showMessage("Room created.");
+      // still call join on server to ensure membership record — createRoomOnServer already marks joined locally
       await joinRoomOnServer(created.id, getCurrentUserId());
     } else {
-      showMessage("Room created locally.", true);
+      showMessage("Room creation failed.", true);
     }
   });
 
   document.addEventListener("click", async (ev) => {
-  const joinId = ev.target?.dataset?.join;
-  const enterId = ev.target?.dataset?.enter;
-  const deleteId = ev.target?.dataset?.delete;
-
-  if (joinId) {
-    ev.preventDefault();
-    await joinRoomOnServer(joinId, getCurrentUserId());
-    return;
-  }
-
-  if (enterId) {
-    ev.preventDefault();
-
-    const room = rooms.find(r => r.id === enterId);
-    if (!room) return showMessage("Room not found.", true);
-
-    if (!joinedRooms.includes(room.id)) {
-      showMessage("Joining room before entering...");
-      const joined = await joinRoomOnServer(room.id, getCurrentUserId());
-      if (!joined) {
-        showMessage("Unable to join room. Cannot enter chat.", true);
-        return;
+    const joinId = ev.target?.dataset?.join;
+    const enterId = ev.target?.dataset?.enter;
+    const deleteId = ev.target?.dataset?.delete;
+    if (joinId) {
+      ev.preventDefault();
+      await joinRoomOnServer(joinId, getCurrentUserId());
+      return;
+    }
+    if (enterId) {
+      ev.preventDefault();
+      const room = rooms.find(r => r.id === enterId);
+      if (room) {
+        localStorage.setItem("currentRoom", JSON.stringify(room.raw || room));
+        if (!joinedRooms.includes(room.id)) {
+          joinedRooms.push(room.id);
+          saveLocalBackup();
+        }
+        window.location.href = "chat.html";
       }
-      if (!joinedRooms.includes(room.id)) joinedRooms.push(room.id);
-      saveLocalBackup();
+      return;
     }
-
-    try { localStorage.setItem("currentRoom", JSON.stringify(room.raw || room)); } catch {}
-    if (!joinedRooms.includes(room.id)) {
-      joinedRooms.push(room.id);
+    if (deleteId) {
+      ev.preventDefault();
+      rooms = rooms.filter(r => r.id !== deleteId);
+      joinedRooms = joinedRooms.filter(n => n !== deleteId);
       saveLocalBackup();
+      renderRooms();
+      renderJoinedRooms();
+      const ok = await deleteRoomOnServer(deleteId);
+      if (!ok) showMessage('Failed to delete room on server.', true);
+      return;
     }
-    window.location.href = "chat.html";
-    return;
-  }
-
-  if (deleteId) {
-    ev.preventDefault();
-    const existing = rooms.find(r => r.id === deleteId);
-    rooms = rooms.filter(r => r.id !== deleteId);
-    joinedRooms = joinedRooms.filter(n => n !== deleteId);
-    saveLocalBackup();
-    renderRooms();
-    renderJoinedRooms();
-    const ok = await deleteRoomOnServer(deleteId);
-    if (!ok) showMessage('Failed to delete room on server.', true);
-    return;
-  }
-});
-
+  });
 
   $("#toggle-create-room-form")?.addEventListener("click", () => {
     const form = $("#create-room-form");
