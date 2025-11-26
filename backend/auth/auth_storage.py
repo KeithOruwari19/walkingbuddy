@@ -9,6 +9,21 @@ import uuid
 import hashlib
 import secrets
 from typing import Optional, Dict
+import logging
+from sqlalchemy import create_engine, Column, String, DateTime, func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+
+logger = logging.getLogger(__name__)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db") 
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args, future=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
 
 
 # Configuration
