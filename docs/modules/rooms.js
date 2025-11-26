@@ -1,4 +1,4 @@
-const BACKEND_HOST = "https://cp317-group-18-project-onrender.com";
+const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
@@ -159,7 +159,6 @@ function saveLocalBackup() {
   } catch (e) {}
 }
 
-// --- dedupe helpers ---
 function dedupeRooms() {
   const seen = new Set();
   const out = [];
@@ -189,10 +188,6 @@ function upsertRoom(r) {
   }
   dedupeRooms();
 }
-
-// ----------------------
-// Server interactions
-// ----------------------
 
 async function fetchRoomsFromServer() {
   try {
@@ -238,32 +233,25 @@ async function createRoomOnServer(roomPayload) {
       body: JSON.stringify(roomPayload)
     });
 
-    const text = await res.text().catch(()=> "");
+    const text = await res.text().catch(()=>"");
     let j = null;
     try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
 
-    console.log("create response raw:", res.status, text, j);
-
     if (!res.ok) {
-      // If server returned a room object inside the error body, accept it tolerantly
       const possible = j && (j.room || j) ? (j.room || j) : null;
       if (possible && (possible.room_id || possible.id)) {
         upsertRoom(possible);
-        // if server included member list and includes current user -> mark joined
-        const uid = getCurrentUserId();
-        const membersArray = possible.members && Array.isArray(possible.members) ? possible.members : (possible.users && Array.isArray(possible.users) ? possible.users : null);
-        if (membersArray && uid && membersArray.includes(uid)) {
-          if (!joinedRooms.includes(String(possible.room_id || possible.id))) joinedRooms.push(String(possible.room_id || possible.id));
-          dedupeJoinedRooms();
-        }
+        if (!joinedRooms.includes(String(possible.room_id || possible.id))) joinedRooms.push(String(possible.room_id || possible.id));
+        dedupeJoinedRooms();
         saveLocalBackup();
         renderJoinedRooms();
         renderRooms();
-        try { localStorage.setItem("currentRoom", JSON.stringify(possible.raw || possible)); } catch {}
+        try { localStorage.setItem("currentRoom", JSON.stringify((possible.raw || possible))); } catch {}
         return normalizeRoom(possible);
       }
+      const errText = text || `${res.status} ${res.statusText}`;
       showMessage("Failed to create room on server.", true);
-      throw new Error(`Create failed: ${text || `${res.status} ${res.statusText}`}`);
+      throw new Error(`Create failed: ${errText}`);
     }
 
     const roomObj = j && (j.room || j) ? (j.room || j) : null;
@@ -272,33 +260,10 @@ async function createRoomOnServer(roomPayload) {
       throw new Error("Server did not return created room");
     }
 
-    console.log("create successful roomObj:", roomObj);
-
     upsertRoom(roomObj);
-
-    // If server indicates creator already present in members -> mark joined without calling join endpoint.
-    const uid = getCurrentUserId();
-    const membersArray = roomObj.members && Array.isArray(roomObj.members) ? roomObj.members : (roomObj.users && Array.isArray(roomObj.users) ? roomObj.users : null);
-    if (membersArray && uid && membersArray.includes(uid)) {
-      if (!joinedRooms.includes(String(roomObj.room_id || roomObj.id))) joinedRooms.push(String(roomObj.room_id || roomObj.id));
-      dedupeJoinedRooms();
-    } else {
-      // if server doesn't include member list, attempt join (but only if necessary)
-      // call join only if server explicitly requires it (we attempt it, but add only on success)
-      try {
-        const joined = await joinRoomOnServer(String(roomObj.room_id || roomObj.id), getCurrentUserId());
-        if (joined) {
-          // joinRoomOnServer will update joinedRooms on success
-        } else {
-          // failed join — do not auto-add joinedRooms; user can click Join manually
-          console.warn("createRoomOnServer: join attempt after create returned null (join failed). leaving unjoined.");
-        }
-      } catch (e) {
-        console.warn("createRoomOnServer: join attempt threw", e);
-      }
-    }
-
+    if (!joinedRooms.includes(String(roomObj.room_id || roomObj.id))) joinedRooms.push(String(roomObj.room_id || roomObj.id));
     dedupeJoinedRooms();
+
     saveLocalBackup();
     renderJoinedRooms();
     renderRooms();
@@ -321,12 +286,12 @@ async function joinRoomOnServer(roomId, userId) {
       body: JSON.stringify({ room_id: roomId, user_id: userId })
     });
     if (!res.ok) {
-      const txt = await res.text().catch(()=>"");
-      console.warn("joinRoomOnServer: non-ok response", res.status, txt);
+      const txt = await res.text();
       throw new Error(txt || "join failed");
     }
     const j = await res.json();
     const updated = normalizeRoom(j.room || j);
+    // replace existing or insert
     upsertRoom(updated.raw || updated);
     if (!joinedRooms.includes(String(updated.id))) joinedRooms.push(String(updated.id));
     dedupeJoinedRooms();
@@ -392,6 +357,7 @@ function connectRoomsSocket() {
       console.log("rooms socket message", data);
       if (data.type === "room:new") {
         const r = normalizeRoom(data.room || data);
+        // update-or-insert
         upsertRoom(r.raw || r);
         saveLocalBackup();
         renderRooms();
@@ -453,6 +419,7 @@ function wireUI() {
     const created = await createRoomOnServer(payload);
     if (created) {
       showMessage("Room created.");
+      await joinRoomOnServer(created.id, getCurrentUserId());
     } else {
       showMessage("Room creation failed.", true);
     }
