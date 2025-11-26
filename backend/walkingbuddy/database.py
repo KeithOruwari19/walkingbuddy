@@ -124,3 +124,14 @@ class ChatDatabase:
       CHAT_DB[room_id] = []
       return True
     return False
+    
+@staticmethod
+  def delete_room(room_id: str) -> Dict:
+    room = ROOMS_DB.get(room_id)
+    if not room:
+      raise ValueError(f"Room {room_id} not found")
+
+    removed = ROOMS_DB.pop(room_id)
+    if room_id in CHAT_DB:
+      CHAT_DB.pop(room_id, None)
+    return removed
