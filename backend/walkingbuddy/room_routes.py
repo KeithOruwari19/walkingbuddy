@@ -131,7 +131,9 @@ async def delete_room(room_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        print(f"[rooms] delete_room failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"[rooms] delete_room failed for {room_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/status")
