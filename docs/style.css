@@ -31,7 +31,6 @@ body {
 .nav-links a {
   color: #c3c6ff;
   text-decoration: none;
-  margin-left: 20px;
   font-size: 14px;
   padding: 4px 8px;
   border-radius: 4px;
@@ -329,12 +328,6 @@ body {
   background: #3949ab;
   color: #fff;
 }
-.nav-links .wb-auth-greeting + a[href*="login.html"],
-.nav-links .wb-auth-greeting + a[href*="signup.html"],
-.nav-links a[href*="login.html"],
-.nav-links a[href*="signup.html"] {
-  display: none !important;
-}
 .nav-links {
   display: flex;
   align-items: center;
@@ -342,18 +335,25 @@ body {
 }
 
 #auth-links {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-  visibility: visible !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  visibility: visible;
 }
 
 #auth-links a,
 .nav-links a {
-  display: inline-block !important;
-  padding: 4px 8px !important;
-  color: #c3c6ff !important;
-  font-size: 14px !important;
-  text-decoration: none !important;
-  line-height: 1 !important;
+  display: inline-block;
+  padding: 4px 8px;
+  color: #c3c6ff;
+  font-size: 14px;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
 }
