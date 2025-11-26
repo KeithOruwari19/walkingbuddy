@@ -35,20 +35,14 @@ function appendMessage(text, self = false) {
   wrapper.classList.add("message-wrapper");
   if (self) wrapper.classList.add("self");
 
-  if (self) {
-    const avatar = document.createElement("div");
-    avatar.classList.add("chat-avatar");
-    const initials = getInitials(user.name, user.email);
-    avatar.textContent = initials;
-    avatar.style.backgroundColor = colorFromString(user.email || user.name || "");
-    wrapper.appendChild(avatar);
-  } else {
-    const avatar = document.createElement("div");
-    avatar.classList.add("chat-avatar");
-    avatar.textContent = "";
-    avatar.style.backgroundColor = "#2b2e44";
-    wrapper.appendChild(avatar);
-  }
+  const avatar = document.createElement("div");
+  avatar.classList.add("chat-avatar");
+
+  const initials = getInitials(user.name, user.email);
+  avatar.textContent = initials;
+  avatar.style.backgroundColor = colorFromString(user.email || user.name || "");
+
+  wrapper.appendChild(avatar);
 
   const bubble = document.createElement("div");
   bubble.classList.add("message-bubble");
@@ -70,12 +64,10 @@ async function loadMessages() {
 
     if (Array.isArray(data.messages)) {
       data.messages.forEach(m => {
-        appendMessage(m.message, m.user_id === user.id);
+        appendMessage(m.content, m.user_id === user.id);
       });
     }
-  } catch (e) {
-    // fail silently for demo
-  }
+  } catch (e) {}
 }
 
 async function sendMessage() {
@@ -90,9 +82,10 @@ async function sendMessage() {
       body: JSON.stringify({
         room_id: room.id,
         user_id: user.id,
-        message: text
+        content: text        // FIXED
       })
     });
+
     input.value = "";
     await loadMessages();
   } catch (e) {}
