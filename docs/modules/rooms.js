@@ -1,4 +1,4 @@
-const BACKEND_HOST = "https://cp317-group-18-project-onrender.com";
+const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
 const WS_URL = BACKEND_HOST.startsWith("https")
   ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
