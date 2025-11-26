@@ -19,16 +19,12 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 class SendMessageRequest(BaseModel):
     room_id: str
-    user_id: Optional[str] = None
+    user_id: str
     content: str  
 
 
 @router.post("/send")
 def send_message(req: SendMessageRequest):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-        
     room = RoomDatabase.get_room(req.room_id)
     if not room:
         raise HTTPException(status_code=404, detail=f"Room {req.room_id} not found")
@@ -48,7 +44,7 @@ def send_message(req: SendMessageRequest):
         )
 
         try:
-            user = auth_storage.get_user_by_id(user_id)
+            user = auth_storage.get_user_by_id(req.user_id)
             if user:
                 if isinstance(message_obj, dict):
                     message_obj["user_name"] = user.get("name")
