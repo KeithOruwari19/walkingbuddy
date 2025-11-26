@@ -1,4 +1,3 @@
-# auth_routes.py
 """
 Authentication Routes Module
 Handles user signup, login, logout, and session verification.
@@ -10,14 +9,17 @@ API Endpoints:
 - GET /auth/verify - Verify current session
 - GET /auth/me - Get current user info
 """
+
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional, List, Dict
+from typing import Optional
 
 from backend.auth import auth_storage
 
+# Create router with prefix and tags
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+# Request/Response Models
 
 class SignupRequest(BaseModel):
     """Data sent by the frontend when a user signs up."""
@@ -82,6 +84,7 @@ class MessageResponse(BaseModel):
     """Generic message response."""
     message: str = Field(..., description="Response message")
 
+# Authentication Endpoints
 
 @router.post(
     "/signup",
@@ -91,6 +94,18 @@ class MessageResponse(BaseModel):
     description="Create a new user account with a Laurier email address and establish a session"
 )
 async def signup(body: SignupRequest, request: Request):
+    """
+    Handle new user registration.
+    
+    Returns:
+        AuthResponse with user data
+    
+    Raises:
+        HTTPException 400: Invalid input data or password too short
+        HTTPException 403: Non-Laurier email address
+        HTTPException 409: Email already registered
+    """
+
     user = auth_storage.create_user(body.name, body.email, body.password)
     
     if user is None:
@@ -130,6 +145,20 @@ async def signup(body: SignupRequest, request: Request):
     description="Authenticate a user and establish a session"
 )
 async def login(body: LoginRequest, request: Request):
+    """
+    Handle existing user login.
+    
+    Args:
+        body: Login request containing email and password
+        request: FastAPI request object (for session management)
+    
+    Returns:
+        AuthResponse with user data
+    
+    Raises:
+        HTTPException 401: Invalid credentials (wrong email or password)
+    """
+
     user = auth_storage.get_user_by_email(body.email)
     
     if user is None or not auth_storage.verify_user_password(user, body.password):
@@ -156,7 +185,19 @@ async def login(body: LoginRequest, request: Request):
     description="Clear the current session"
 )
 async def logout(request: Request):
+    """
+    Handle user logout by clearing their session.
+    
+    No authentication required - just clears the session cookie if it exists.
+    
+    Args:
+        request: FastAPI request object (for session management)
+    
+    Returns:
+        MessageResponse confirming logout
+    """
     request.session.clear()
+    
     return MessageResponse(message="Successfully logged out. Session cleared.")
 
 
@@ -168,6 +209,20 @@ async def logout(request: Request):
     description="Check if user has a valid session and get user information"
 )
 async def verify_session(request: Request):
+    """
+    Verify if a user has a valid session and return user information.
+    
+    Checks the session cookie for user_id and validates the user still exists.
+    
+    Args:
+        request: FastAPI request object (for session management)
+    
+    Returns:
+        UserResponse with user data
+    
+    Raises:
+        HTTPException 401: No session or invalid user_id
+    """
     user_id = request.session.get("user_id")
     
     if not user_id:
@@ -201,11 +256,41 @@ async def verify_session(request: Request):
     description="Get information about the currently logged-in user"
 )
 async def get_current_user(request: Request):
+    """
+    Get the current user's information from their session.
+    
+    This is an alias for /verify with more RESTful naming.
+    
+    Args:
+        request: FastAPI request object (for session management)
+    
+    Returns:
+        UserResponse with user data
+    
+    Raises:
+        HTTPException 401: No session or invalid user_id
+    """
     return await verify_session(request)
 
 
+# Helper Functions (for use in other modules)
 
 def get_session_user_id(request: Request) -> str:
+    """
+    Extract user_id from session cookie.
+    
+    Helper function for use in other route modules to protect endpoints.
+    
+    Args:
+        request: FastAPI request object
+    
+    Returns:
+        user_id string
+    
+    Raises:
+        HTTPException 401: If not authenticated
+    
+    """
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(
@@ -216,10 +301,19 @@ def get_session_user_id(request: Request) -> str:
 
 
 def get_session_user_id_optional(request: Request) -> Optional[str]:
+    """
+    Extract user_id from session cookie without raising exception.
+    
+    Helper function for optional authentication (returns None if not authenticated).
+    
+    Args:
+        request: FastAPI request object
+    
+    Returns:
+        user_id string if authenticated, None otherwise
+    
+    """
     return request.session.get("user_id")
-
-
-user_router = APIRouter(prefix="/api/users", tags=["users"])
 
 @user_router.get("/{user_id}")
 def get_user(user_id: str):
