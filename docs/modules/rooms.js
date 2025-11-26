@@ -524,4 +524,3 @@ function isValidMeetTime(raw) {
   renderJoinedRooms();
   renderRooms();
 })();
-      
