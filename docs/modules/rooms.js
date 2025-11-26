@@ -478,34 +478,39 @@ function connectRoomsSocket() {
 
 function wireUI() {
   $("#btn-create-room")?.addEventListener("click", async () => {
-    const name = $("#room-name")?.value?.trim();
-    const meet = $("#meet-time")?.value?.trim();
-    const start = $("#start-location")?.value?.trim();
-    const dest = $("#destination")?.value?.trim();
-    if (!name || !start || !dest) return showMessage("Fill in name/start/destination.", true);
-    if (meet && !isValidMeetTime(meet)) return showMessage("Invalid date.", true);
+  const name = $("#room-name")?.value?.trim();
+  const meet = $("#meet-time")?.value?.trim();
+  const start = $("#start-location")?.value?.trim();
+  const dest = $("#destination")?.value?.trim();
+  if (!name || !start || !dest) return showMessage("Fill in name/start/destination.", true);
+  if (meet && !isValidMeetTime(meet)) return showMessage("Invalid date.", true);
 
-    const payload = {
-      user_id: getCurrentUserId(),
-      destination: dest,
-      start_coord: [0,0],
-      dest_coord: [0,0],
-      max_members: 10,
-      room_name: name,
-      meetTime: meet,
-      startLocation: start
-    };
+  const payload = {
+    user_id: getCurrentUserId(),
+    destination: dest,
+    start_coord: [0,0],
+    dest_coord: [0,0],
+    max_members: 10,
+    room_name: name,
+    meetTime: meet,
+    startLocation: start
+  };
 
-    $("#create-room-form").style.display = "none";
-    showMessage("Creating room...");
-    const created = await createRoomOnServer(payload);
-    if (created) {
-      showMessage("Room created.");
-      await joinRoomOnServer(created.id, getCurrentUserId());
-    } else {
-      showMessage("Room created locally.", true);
-    }
-  });
+  $("#create-room-form").style.display = "none";
+  showMessage("Creating room...");
+  const created = await createRoomOnServer(payload);
+
+  if (!created) {
+    return;
+  }
+  const joined = await joinRoomOnServer(created.id, getCurrentUserId());
+  if (joined) {
+    showMessage("Room created and joined.");
+  } else {
+    showMessage("Room created on server but failed to join server-side. Saved locally; you can still enter chat.", true);
+    try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch (e) {}
+  }
+});
 
   document.addEventListener("click", async (ev) => {
     const actionable = ev.target.closest
