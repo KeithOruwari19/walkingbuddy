@@ -287,23 +287,42 @@ async function joinRoomOnServer(roomId, userId) {
     if (userId) {
       body.user_id = userId;
     }
-
     const res = await fetch(`${API_BASE}/join`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-
     const text = await res.text().catch(()=>"");
     let j = null;
     try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
-
     if (!res.ok) {
       const errMsg = (j && (j.detail || j.message)) || text || `HTTP ${res.status} ${res.statusText}`;
+      if (typeof errMsg === "string" && errMsg.toLowerCase().includes("already in room")) {
+        console.info("joinRoomOnServer: user already in room — treating as success", roomId, userId);
+        const possible = j && (j.room || j) ? (j.room || j) : null;
+        const updated = possible ? normalizeRoom(possible) : (rooms.find(r => String(r.id) === String(roomId)) || null);
+
+        if (updated) {
+          upsertRoom(updated.raw || updated);
+          if (!joinedRooms.includes(String(updated.id))) joinedRooms.push(String(updated.id));
+          dedupeJoinedRooms();
+          saveLocalBackup();
+          renderJoinedRooms();
+          renderRooms();
+          try { localStorage.setItem("currentRoom", JSON.stringify((possible && (possible.raw || possible)) || (updated.raw || updated))); } catch(e) {}
+          return updated;
+        }
+        const fallback = normalizeRoom({ room_id: roomId, id: roomId });
+        if (!joinedRooms.includes(String(fallback.id))) joinedRooms.push(String(fallback.id));
+        dedupeJoinedRooms();
+        saveLocalBackup();
+        renderJoinedRooms();
+        renderRooms();
+        return fallback;
+      }
       throw new Error(errMsg);
     }
-
     const updated = normalizeRoom((j && (j.room || j)) ? (j.room || j) : j);
     upsertRoom(updated.raw || updated);
     if (!joinedRooms.includes(String(updated.id))) joinedRooms.push(String(updated.id));
