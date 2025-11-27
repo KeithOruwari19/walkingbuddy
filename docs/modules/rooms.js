@@ -452,7 +452,15 @@ function wireUI() {
     const created = await createRoomOnServer(payload);
     if (created) {
       showMessage("Room created.");
-      await joinRoomOnServer(created.id, getCurrentUserId());
+      const rid = String(created.id || created.room_id || created.uuid || created.raw?.id || created.raw?.room_id);
+      if (!joinedRooms.includes(rid)) {
+        joinedRooms.push(rid);
+        dedupeJoinedRooms();
+        saveLocalBackup();
+        renderJoinedRooms();
+        renderRooms();
+      }
+      try { localStorage.setItem("currentRoom", JSON.stringify(created.raw || created)); } catch {}
     } else {
       showMessage("Room creation failed.", true);
     }
