@@ -22,7 +22,7 @@ function getStoredUser() {
 function getCurrentUserId() {
   const u = getStoredUser();
   if (!u) return null;
-  return u.user_id || u.id || u.userId || u.email || null;
+  return u.user_id || u.id || u.userId || null;
 }
 function getCurrentUserName() {
   const u = getStoredUser();
@@ -222,7 +222,10 @@ async function createRoomOnServer(roomPayload) {
   try {
     const currentUser = getStoredUser();
     if (currentUser) {
-      roomPayload.user_id = roomPayload.user_id || (currentUser.id || currentUser.user_id || currentUser.email || currentUser.name);
+      const explicitId = currentUser.id || currentUser.user_id || currentUser.userId || null;
+      if (explicitId) {
+        roomPayload.user_id = roomPayload.user_id || explicitId;
+      }
       roomPayload.creator_name = roomPayload.creator_name || (currentUser.name || currentUser.email || null);
     }
 
@@ -249,7 +252,7 @@ async function createRoomOnServer(roomPayload) {
         try { localStorage.setItem("currentRoom", JSON.stringify((possible.raw || possible))); } catch {}
         return normalizeRoom(possible);
       }
-      const errText = text || `${res.status} ${res.statusText}`;
+      const errText = (j && (j.detail || j.message)) || text || `${res.status} ${res.statusText}`;
       showMessage("Failed to create room on server.", true);
       throw new Error(`Create failed: ${errText}`);
     }
@@ -277,21 +280,31 @@ async function createRoomOnServer(roomPayload) {
   }
 }
 
+
 async function joinRoomOnServer(roomId, userId) {
   try {
+    const body = { room_id: roomId };
+    if (userId) {
+      body.user_id = userId;
+    }
+
     const res = await fetch(`${API_BASE}/join`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_id: roomId, user_id: userId })
+      body: JSON.stringify(body)
     });
+
+    const text = await res.text().catch(()=>"");
+    let j = null;
+    try { j = text ? JSON.parse(text) : null; } catch(e){ j = null; }
+
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || "join failed");
+      const errMsg = (j && (j.detail || j.message)) || text || `HTTP ${res.status} ${res.statusText}`;
+      throw new Error(errMsg);
     }
-    const j = await res.json();
-    const updated = normalizeRoom(j.room || j);
-    // replace existing or insert
+
+    const updated = normalizeRoom((j && (j.room || j)) ? (j.room || j) : j);
     upsertRoom(updated.raw || updated);
     if (!joinedRooms.includes(String(updated.id))) joinedRooms.push(String(updated.id));
     dedupeJoinedRooms();
@@ -306,6 +319,7 @@ async function joinRoomOnServer(roomId, userId) {
     return null;
   }
 }
+
 
 async function deleteRoomOnServer(roomId) {
   try {
