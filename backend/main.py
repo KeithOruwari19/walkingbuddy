@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import logging
+from fastapi.responses import PlainTextResponse
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -51,6 +52,10 @@ USER_AGENT = "WalkingBuddy/1.0"
 @app.on_event("startup")
 async def _log_routes():
     logger.info("Registered routes: %s", [r.path for r in app.routes])
+
+@app.get("/ping", response_class=PlainTextResponse)
+async def ping():
+    return "OK"
 
 @app.get("/api/navigation/route")
 async def get_route_data(start: str, destination: str, mode: str = "walking"):
