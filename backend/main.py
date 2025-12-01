@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import logging
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse # pinger
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -53,7 +53,8 @@ USER_AGENT = "WalkingBuddy/1.0"
 async def _log_routes():
     logger.info("Registered routes: %s", [r.path for r in app.routes])
 
-@app.get("/ping", response_class=PlainTextResponse)
+# pings render every 3 mins with Better Stack Uptime, because the free plan spins down with inactivity
+@app.get("/ping", response_class=PlainTextResponse) 
 async def ping():
     return "OK"
 
