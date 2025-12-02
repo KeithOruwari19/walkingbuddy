@@ -1,8 +1,6 @@
 const BACKEND_HOST = "https://cp317-group-18-project.onrender.com";
 const API_BASE = `${BACKEND_HOST}/api/rooms`;
-const WS_URL = BACKEND_HOST.startsWith("https")
-  ? `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`
-  : `ws://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`;
+const WS_URL = `wss://${BACKEND_HOST.replace(/^https?:\/\//, "")}/api/rooms/ws`;
 
 let rooms = [];
 let joinedRooms = [];
@@ -263,8 +261,6 @@ async function createRoomOnServer(roomPayload) {
       throw new Error("Server did not return created room");
     }
 
-    upsertRoom(roomObj);
-    if (!joinedRooms.includes(String(roomObj.room_id || roomObj.id))) joinedRooms.push(String(roomObj.room_id || roomObj.id));
     dedupeJoinedRooms();
 
     saveLocalBackup();
