@@ -329,24 +329,26 @@
 <body>
 
   <header class="topbar">
-    <div class="logo">WalkingBuddy</div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <img src="images/walkingbuddy_logo.png" alt="WalkingBuddy Logo" style="height: 90px; width: auto;" />
+      <div class="logo" style="font-size: 18px; font-weight: 600;">WalkingBuddy</div>
+    </div>
     <nav class="nav-links">
       <a href="index.html" class="active">Navigation</a>
       <a href="rooms.html">Rooms</a>
-
-  
       <span id="auth-links" style="display:inline-flex; gap:12px; align-items:center;">
-      <a href="login.html">Login</a>
-      <a href="signup.html">Sign Up</a>
-    </span>
-
-    <span id="user-info" style="display:none; align-items:center; gap:10px;">
-      <span id="user-avatar" class="chat-avatar" style="width:28px; height:28px; font-size:12px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%"></span>
-      <span id="user-name"></span>
-      <a href="#" id="logout-btn" class="auth-link">Logout</a>
-    </span>
-  </nav>
+        <a href="login.html">Login</a>
+        <a href="signup.html">Sign Up</a>
+      </span>
+      <span id="user-info" style="display:none; align-items:center; gap:10px;">
+        <span id="user-avatar"></span>
+        <span id="user-name"></span>
+        <a href="#" id="logout-btn" class="auth-link">Logout</a>
+      </span>
+    </nav>
   </header>
+  
+  
 
   <main class="layout">
 
