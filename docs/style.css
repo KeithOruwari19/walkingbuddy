@@ -361,14 +361,16 @@ body {
 #user-avatar {
   width: 32px; 
   height: 32px; 
-  border-radius: 50%;  /* Ensures it's circular */
-  background-color: #3949ab;  /* Default background color */
-  color: white;
+  border-radius: 50%; 
+  background-color: #3949ab;  
+  color: white;  
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden; /* Prevents any overflow of content */
+  font-size: 14px;  
+  font-weight: 600; 
+  overflow: hidden; 
+  text-transform: uppercase; 
 }
+
 
