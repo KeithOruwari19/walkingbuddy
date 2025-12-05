@@ -2,7 +2,7 @@
 -------------------------------------------------------
 main.py dictates the main backend logic for the program
 -------------------------------------------------------
-__updated__ = "2025-12-01"
+__updated__ = "2025-12-05"
 -------------------------------------------------------
 """
 # Imports
@@ -59,7 +59,7 @@ async def ping():
     return "OK"
 
 @app.get("/api/navigation/route")
-async def get_route_data(start: str, destination: str, mode: str = "walking"):
+async def get_route_data(start: str, destination: str, mode: str = "foot"):
     try:
         # getting coords for the start and dest
         start_coord = await geocode_nominatim(start)
@@ -86,7 +86,7 @@ async def geocode_nominatim(address: str):
     return [float(data["lat"]), float(data["lon"])] # latitude, longitude as floats cuz osrm wants floats
 
 
-async def osrm_route(from_coord, to_coord, mode="driving"):  # osrm api
+async def osrm_route(from_coord, to_coord, mode):  # osrm api
     coords = f"{from_coord[1]},{from_coord[0]};{to_coord[1]},{to_coord[0]}"
     url = f"https://router.project-osrm.org/route/v1/{mode}/{coords}"
     params = {"overview": "full", "geometries": "geojson", "steps": "true"}
