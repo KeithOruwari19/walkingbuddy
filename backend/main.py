@@ -48,6 +48,7 @@ app.include_router(auth_routes.user_router)
 
 
 USER_AGENT = "WalkingBuddy/1.0"
+CONTACT_EMAIL = dang1532@mylaurier.ca
 
 @app.on_event("startup")
 async def _log_routes():
@@ -76,14 +77,55 @@ async def geocode_nominatim(address: str):
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": address, "format": "json", "limit": 1}
     headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(timeout=60.0) as client:
-# honestly nominatim lookup should only take a couple hundred ms
-# but I made timeout 1m just to make sure
-        r = await client.get(url, params=params, headers=headers)
-    if not r.json():  # if the result is empty
-        raise ValueError(f"Address is not found: {address}")
-    data = r.json()[0]
-    return [float(data["lat"]), float(data["lon"])] # latitude, longitude as floats cuz osrm wants floats
+    headers["From"] = CONTACT_EMAIL
+    backoff = 0.5
+    last_exc = None
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for attempt in range(1, 4):  # 3 attempts
+            try:
+                logger.info("Nominatim geocode attempt %d for %s", attempt, address)
+                r = await client.get(url, params=params, headers=headers)
+                logger.info("Nominatim status=%s for %s", r.status_code, address)
+                if r.status_code != 200:
+                    last_exc = Exception(f"Nominatim status {r.status_code}: {r.text[:200]}")
+                    if 500 <= r.status_code < 600:
+                        await asyncio.sleep(backoff * attempt)
+                        continue
+                    else:
+                        break
+                json_body = r.json()
+                if not json_body:
+                    last_exc = Exception("Nominatim returned no results")
+                    break
+                d = json_body[0]
+                lat = float(d["lat"])
+                lon = float(d["lon"])
+                return [lat, lon]
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
+                logger.exception("Nominatim attempt %d failed for %s: %s", attempt, address, e)
+                last_exc = e
+                await asyncio.sleep(backoff * attempt)
+                continue
+
+    # Nominatim failed so try photon
+    try:
+        photon_url = "https://photon.komoot.io/api/"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(photon_url, params={"q": address, "limit": 1})
+            logger.info("Photon status=%s for %s", r.status_code, address)
+            if r.status_code == 200 and r.json().get("features"):
+                feat = r.json()["features"][0]
+                coords = feat["geometry"]["coordinates"]  # [lon, lat]
+                return [float(coords[1]), float(coords[0])]
+            else:
+                logger.warning("Photon returned no results for %s: %s", address, r.text[:200])
+    except Exception as e:
+        logger.exception("Photon fallback failed for %s: %s", address, e)
+        last_exc = e
+
+    # Nothing worked
+    raise ValueError(f"Geocoding failed for '{address}': {last_exc}")
 
 
 async def osrm_route(from_coord, to_coord, mode="foot"): #osrm
