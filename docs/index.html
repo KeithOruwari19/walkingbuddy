@@ -232,28 +232,69 @@
         return;
       }
 
-      
-      const startText = currentRouteData.start_text || currentRouteData.start || '';
-      const destText = currentRouteData.dest_text || currentRouteData.dest || '';
+      const payload = {
+        user_id: String(userId),
+        destination: currentRouteData.dest_text || '',
+        start_coord: [Number(start_coord[0]), Number(start_coord[1])],
+        dest_coord: [Number(dest_coord[0]), Number(dest_coord[1])],
+        max_members: 10
+      };
 
-      let roomName = '';
-      if (destText) {
-        try { roomName = `Walk to ${destText.split(',')[0].trim()}`; } catch(e){ roomName = `Walking Room`; }
+      const res = await fetch(`${BACKEND_BASE}/api/rooms/create`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(()=>({}));
+
+      if (res.ok && data.success) {
+        const roomObj = data.room || {};
+        const roomId = roomObj.id || roomObj.room_id || roomObj.roomId || roomObj['room_id'];
+        const roomUrl = data.room_url || roomObj.url || roomObj.room_url;
+
+        const startText = currentRouteData.start_text || '';
+        const destText = currentRouteData.dest_text || '';
+        const baseRooms = `${window.location.origin}/walkingbuddy/rooms.html`;
+        const addParams = (url) => {
+          try {
+            const u = new URL(url, window.location.origin);
+            u.searchParams.set('start', startText);
+            u.searchParams.set('dest', destText);
+            return u.toString();
+          } catch (e) {
+            return `${url}${url.includes('?') ? '&' : '?'}start=${encodeURIComponent(startText)}&dest=${encodeURIComponent(destText)}`;
+          }
+        };
+
+        if (roomUrl) {
+          try {
+            const u = new URL(roomUrl, window.location.origin);
+            if (u.origin === window.location.origin) {
+              window.location.href = addParams(roomUrl);
+            } else {
+              window.location.href = roomUrl;
+            }
+          } catch (e) {
+            window.location.href = roomUrl;
+          }
+          return;
+        } else if (roomId) {
+          window.location.href = `${baseRooms}?room_id=${encodeURIComponent(roomId)}&start=${encodeURIComponent(startText)}&dest=${encodeURIComponent(destText)}`;
+          return;
+        } else {
+          window.location.href = `${baseRooms}?start=${encodeURIComponent(startText)}&dest=${encodeURIComponent(destText)}`;
+          return;
+        }
+      } else {
+        // show error returned by server or fallback message
+        const detail = data.detail || data.message || data.error || JSON.stringify(data) || res.statusText;
+        showRouteInfo(`Failed to create room: ${detail}`);
       }
-
-      const params = new URLSearchParams();
-      params.set('start', startText);
-      params.set('dest', destText);
-      params.set('start_coord', `${Number(start_coord[0])},${Number(start_coord[1])}`);
-      params.set('dest_coord', `${Number(dest_coord[0])},${Number(dest_coord[1])}`);
-      params.set('room_name', roomName);
-      params.set('max_members', '10');
-
-      window.location.href = `${window.location.origin}/walkingbuddy/rooms.html?${params.toString()}`;
-
     } catch (err) {
-      console.error('createRoom (prefill) error', err);
-      showRouteInfo('Error while preparing room form.');
+      console.error('createRoom error', err);
+      showRouteInfo('Network error while creating room.');
     } finally {
       if (btnCreateRoom) {
         btnCreateRoom.disabled = false;
@@ -351,4 +392,3 @@
 
 </body>
 </html>
-
