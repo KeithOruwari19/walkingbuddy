@@ -86,23 +86,47 @@ async def geocode_nominatim(address: str):
     return [float(data["lat"]), float(data["lon"])] # latitude, longitude as floats cuz osrm wants floats
 
 
-async def osrm_route(from_coord, to_coord, mode):  # osrm api
+async def osrm_route(from_coord, to_coord, mode="foot"): #osrm
     coords = f"{from_coord[1]},{from_coord[0]};{to_coord[1]},{to_coord[0]}"
-    url = f"https://router.project-osrm.org/route/v1/foot/{coords}"
     params = {"overview": "full", "geometries": "geojson", "steps": "true"}
-    # overview=full for full geometry
-    # geometries=geojson returns coordinates as arrays
-    # steps=true for instructions
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.get(url, params=params)
-    if r.status_code != 200:
-        raise ValueError("OSRM route failed")
-    data = r.json()
-    if data["code"] != "Ok":
-        raise ValueError("No route found")
-    route = data["routes"][0]
-    geometry = [[p[1], p[0]] for p in route["geometry"]["coordinates"]]
-    return {"distance_m": route["distance"], "duration_s": route["duration"], "geometry": geometry} 
+
+    # Primary + backup OSRM servers
+    OSRM_URLS = [
+        f"https://router.project-osrm.org/route/v1/{mode}/{coords}",
+        f"https://routing.openstreetmap.de/routed-car/route/v1/{mode}/{coords}",
+        f"https://routing.openstreetmap.de/routed-foot/route/v1/{mode}/{coords}",
+    ]
+
+    last_error = None
+
+    for url in OSRM_URLS:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(url, params=params)
+
+            if r.status_code != 200:
+                last_error = f"OSRM status {r.status_code} from {url}"
+                continue
+
+            data = r.json()
+            if data.get("code") != "Ok":
+                last_error = f"OSRM code {data.get('code')} from {url}"
+                continue
+
+            route = data["routes"][0]
+            geometry = [[p[1], p[0]] for p in route["geometry"]["coordinates"]]
+
+            return {
+                "distance_m": route["distance"],
+                "duration_s": route["duration"],
+                "geometry": geometry
+            }
+
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    raise ValueError(f"All OSRM servers failed: {last_error}")
 
 @app.get("/api/navigation/reverse")
 async def reverse_geocode(lat: float, lon: float):
