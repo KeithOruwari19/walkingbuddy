@@ -88,7 +88,7 @@ async def geocode_nominatim(address: str):
 
 async def osrm_route(from_coord, to_coord, mode):  # osrm api
     coords = f"{from_coord[1]},{from_coord[0]};{to_coord[1]},{to_coord[0]}"
-    url = f"https://router.project-osrm.org/route/v1/{mode}/{coords}"
+    url = f"https://router.project-osrm.org/route/v1/foot/{coords}"
     params = {"overview": "full", "geometries": "geojson", "steps": "true"}
     # overview=full for full geometry
     # geometries=geojson returns coordinates as arrays
