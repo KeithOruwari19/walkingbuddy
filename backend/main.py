@@ -51,6 +51,7 @@ app.include_router(auth_routes.user_router)
 
 USER_AGENT = "WalkingBuddy/1.0"
 CONTACT_EMAIL = "dang1532@mylaurier.ca"
+_COORD_RE = re.compile(r'^\s*([-+]?\d*\.?\d+)\s*[, ]\s*([-+]?\d*\.?\d+)\s*$')
 
 @app.on_event("startup")
 async def _log_routes():
