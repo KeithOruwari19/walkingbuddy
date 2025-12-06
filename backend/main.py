@@ -48,7 +48,7 @@ app.include_router(auth_routes.user_router)
 
 
 USER_AGENT = "WalkingBuddy/1.0"
-CONTACT_EMAIL = dang1532@mylaurier.ca
+CONTACT_EMAIL = "dang1532@mylaurier.ca"
 
 @app.on_event("startup")
 async def _log_routes():
