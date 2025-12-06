@@ -75,6 +75,15 @@ async def get_route_data(start: str, destination: str, mode: str = "foot"):
 
 # routing
 async def geocode_nominatim(address: str):
+    m = _COORD_RE.match(address) # if its already lat lon then skip nominatim
+    if m:
+        try:
+            a = float(m.group(1))
+            b = float(m.group(2))
+            return [a, b]
+        except Exception as e:
+            logger.exception("Failed parsing coords from input %r: %s", address, e)
+            
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": address, "format": "json", "limit": 1}
     headers = {"User-Agent": USER_AGENT}
